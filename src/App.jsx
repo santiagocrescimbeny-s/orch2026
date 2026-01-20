@@ -3,7 +3,7 @@ import { Clock, Calendar, CheckCircle, AlertCircle, Users, TrendingUp, ShieldChe
 import { db } from './firebase';
 import { ref, onValue, set } from "firebase/database";
 
-const TEAM_MEMBERS = ["Santiago", "Alan", "Ghis", "Diego", "Joy", "Juan", "Melany"];
+const TEAM_MEMBERS = ["Santiago", "Alan", "Ghis", "Diego", "Cony", "Juan", "Melany"];
 
 const generateWeeks = () => {
     const weeks = [];
