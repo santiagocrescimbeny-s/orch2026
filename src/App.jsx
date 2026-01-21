@@ -119,9 +119,21 @@ function App() {
     };
 
     return (
-        <div className="min-h-screen bg-[#050505] p-4 md:p-8 font-sans text-slate-300">
+        <div className="min-h-screen bg-[#050505] font-sans text-slate-300" style={{ overflowX: 'hidden', width: '100vw', maxWidth: '100%', padding: '0' }}>
             <style>
                 {`
+                /* Reset y prevención de scroll horizontal */
+                * {
+                    box-sizing: border-box;
+                    margin: 0;
+                    padding: 0;
+                }
+                html, body {
+                    overflow-x: hidden;
+                    width: 100%;
+                    max-width: 100vw;
+                }
+                
                 /* Animaciones y estilos globales */
                 @keyframes camera-glow-30s {
                     0%, 90%, 100% { border-color: rgba(255,255,255,0.1); }
@@ -189,15 +201,16 @@ function App() {
                     overflow: hidden;
                     background-color: #09090b;
                     border: 1px solid rgba(255, 255, 255, 0.05);
-                    padding: 80px 20px;
-                    border-radius: 4rem;
+                    padding: 60px 20px;
+                    border-radius: 3rem;
                     display: flex;
                     flex-direction: column;
                     align-items: center;
                     justify-content: center;
                     text-align: center;
                     width: 100%;
-                    margin-bottom: 15px;
+                    margin: 0 auto 20px;
+                    max-width: 100%;
                 }
                 .hero-blob {
                     position: absolute;
@@ -218,17 +231,30 @@ function App() {
                     display: inline-flex;
                 }
 
+                /* Container principal */
+                .main-container {
+                    width: 100%;
+                    max-width: 1400px;
+                    margin: 0 auto;
+                    padding: 0 16px;
+                }
+
                 /* WEEKS / TABLES */
                 .weeks-section {
                     display: flex;
                     flex-direction: column;
                     gap: 80px;
-                    padding: 20px;
+                    width: 100%;
+                    max-width: 100%;
                 }
-                .week-wrapper { position: relative; }
+                .week-wrapper { 
+                    position: relative; 
+                    width: 100%;
+                    max-width: 100%;
+                }
                 .week-label {
                     position: absolute;
-                    top: -20px;
+                    top: -2%;
                     left: 50%;
                     transform: translateX(-50%);
                     z-index: 20;
@@ -237,44 +263,107 @@ function App() {
                     background: linear-gradient(145deg, #064e3b 0%, #022c22 100%);
                     border: 1px solid #10b981;
                 }
+                .week-label span { 
+                    color: #ffffff; 
+                    font-size: clamp(9px, 1.5vw, 12px);
+                    font-weight: 900; 
+                    text-transform: uppercase; 
+                    letter-spacing: 0.4em; 
+                    display: inline-block; 
+                }
+
                 .week-card {
                     background-color: #ffffff;
                     border-radius: 40px;
-                    padding: 48px 24px 24px 24px;
+                    padding: 48px 16px 24px 16px;
                     border: 1px solid #ecfdf5;
-                    overflow-x: auto;
+                    overflow: hidden;
+                    width: 100%;
+                    max-width: 100%;
                 }
-                .week-table { width: 100%; border-collapse: separate; border-spacing: 0 8px; min-width: 720px; }
+                
+                .table-container {
+                    width: 100%;
+                    overflow-x: auto;
+                    overflow-y: visible;
+                    -webkit-overflow-scrolling: touch;
+                }
+                
+                .week-table { 
+                    width: 100%; 
+                    border-collapse: separate; 
+                    border-spacing: 0 8px;
+                    min-width: 100%;
+                }
 
+                /* Responsive date text */
                 .week-table thead th {
-                    padding: 16px;
+                    padding: 12px 4px;
                     text-align: center;
-                    font-size: 10px;
+                    font-size: 9px;
                     font-weight: 900;
                     color: #64748b;
                     text-transform: uppercase;
+                    white-space: nowrap;
                 }
+
+                .week-table thead th .day-abbrev {
+                    display: block;
+                    color: #10b981;
+                    font-weight: 800;
+                    font-size: clamp(8px, 1.6vw, 12px);
+                    text-transform: uppercase;
+                    letter-spacing: 0.06em;
+                }
+                .week-table thead th .day-display {
+                    display: block;
+                    color: #064e3b;
+                    font-weight: 900;
+                    font-size: clamp(12px, 3vw, 16px);
+                }
+                
+                .week-table tbody td {
+                    padding: 8px 4px;
+                    text-align: center;
+                }
+                
                 .week-table tbody td input {
-                    width: 52px;
-                    height: 38px;
+                    width: clamp(36px, 6.5vw, 52px);
+                    min-width: 36px;
+                    max-width: 52px;
+                    height: clamp(34px, 3.5vw, 38px);
                     text-align: center;
                     background-color: #f8fafc;
                     border: 1px solid transparent;
                     border-radius: 12px;
                     color: #059669;
                     font-weight: 800;
-                    font-size: 14px;
+                    font-size: clamp(11px, 1.8vw, 13px);
+                    box-sizing: border-box;
                 }
+                
                 .set-all-select {
-                    width: 65px;
-                    height: 36px;
+                    width: clamp(40px, 6.5vw, 65px);
+                    min-width: 40px;
+                    max-width: 65px;
+                    height: clamp(34px, 3.5vw, 36px);
                     background-color: #ffffff;
                     border: 1px solid #d1fae5;
                     border-radius: 12px;
                     color: #064e3b;
                     font-weight: 700;
+                    font-size: clamp(9px, 1.6vw, 11px);
                     text-align: center;
                     cursor: pointer;
+                    box-sizing: border-box;
+                }
+
+                /* Member name responsive */
+                .member-name {
+                    font-size: clamp(11px, 2.2vw, 14px);
+                    font-weight: 800;
+                    color: #334155;
+                    background-color: #f8fafc;
                 }
 
                 /* SALARY CARDS */
@@ -283,14 +372,20 @@ function App() {
                     background-color: #050505;
                     border: 1px solid rgba(16, 185, 129, 0.1);
                     border-radius: 4rem;
-                    padding: 80px 40px;
+                    padding: 80px 20px;
                     overflow: hidden;
+                    width: 100%;
+                    max-width: 100%;
                 }
+                
                 .salary-grid {
                     display: grid;
-                    grid-template-columns: repeat(3, 1fr);
+                    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
                     gap: 24px;
+                    width: 100%;
+                    max-width: 100%;
                 }
+                
                 .salary-card {
                     position: relative;
                     background-color: #0f0f0f;
@@ -299,48 +394,272 @@ function App() {
                     transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
                     overflow: hidden;
                     cursor: pointer;
+                    min-height: 160px;
+                    width: 100%;
                 }
+
+                .card-inner {
+                    padding: 36px 24px;
+                    display: flex;
+                    gap: 12px;
+                    align-items: center;
+                    justify-content: space-between;
+                    flex-wrap: wrap;
+                }
+                
+                .card-left, .card-center, .card-right {
+                    min-width: 0;
+                    flex: 1;
+                }
+                
+                .card-center {
+                    text-align: center;
+                }
+                
+                .card-center h3 {
+                    font-size: clamp(1rem, 3.5vw, 1.4rem);
+                    line-height: 1;
+                    margin: 0;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+                
+                .card-left p, .card-left .rate { 
+                    font-size: 12px; 
+                }
+                
+                .card-left .rate-amount { 
+                    font-size: 16px; 
+                    font-weight: 800; 
+                    color: #fff; 
+                }
+
+                .card-right {
+                    text-align: right;
+                }
+                
+                .card-right .totalNeto {
+                    font-size: clamp(16px, 4vw, 28px);
+                    font-weight: 1000;
+                    color: #00ffcc;
+                    white-space: nowrap;
+                }
+
                 .expandable-content {
                     max-height: 0px;
                     opacity: 0;
                     transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
                     background-color: rgba(255,255,255,0.02);
                     border-top: 1px solid rgba(255,255,255,0.05);
-                    padding: 0 40px;
+                    padding: 0 36px;
+                    overflow: hidden;
+                }
+                
+                .expandable-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                    gap: 20px;
+                    margin-bottom: 20px;
                 }
 
                 /* Responsive rules */
                 @media (max-width: 1200px) {
-                    .hero-section { padding: 60px 18px; border-radius: 2.5rem; }
-                    .week-card { padding: 28px 18px 18px 18px; }
-                    .week-table { min-width: 680px; }
-                    .salary-grid { grid-template-columns: repeat(2, 1fr); }
+                    .hero-section { 
+                        padding: 50px 16px; 
+                        border-radius: 2.5rem; 
+                    }
+                    .week-card { 
+                        padding: 36px 12px 20px 12px; 
+                    }
+                    .main-container {
+                        padding: 0 12px;
+                    }
                 }
+                
                 @media (max-width: 768px) {
-                    .camera-container { width: 56px; height: 56px; bottom: 18px; right: 18px; }
-                    .camera-btn { width: 50px; height: 50px; }
-                    .hero-section { padding: 36px 16px; border-radius: 1.5rem; }
-                    .hero-blob { width: 300px; height: 140px; filter: blur(70px); }
-                    .week-card { padding: 20px 12px 12px 12px; border-radius: 20px; }
-                    .week-table { min-width: 620px; }
-                    .week-table thead th { padding: 8px; font-size: 9px; }
-                    .week-table tbody td input { width: 44px; height: 36px; font-size: 13px; }
-                    .set-all-select { width: 54px; height: 34px; }
-                    .salary-section { padding: 48px 20px; border-radius: 2rem; }
-                    .salary-grid { grid-template-columns: 1fr; gap: 16px; }
-                    .salary-card { border-radius: 1.5rem; }
-                    .expandable-content { padding: 0 20px; }
+                    .main-container {
+                        padding: 0 8px;
+                    }
+                    
+                    .camera-container { 
+                        width: 56px; 
+                        height: 56px; 
+                        bottom: 18px; 
+                        right: 18px; 
+                    }
+                    
+                    .camera-btn { 
+                        width: 50px; 
+                        height: 50px; 
+                    }
+                    
+                    .hero-section { 
+                        padding: 36px 12px; 
+                        border-radius: 1.5rem;
+                        margin-bottom: 16px;
+                    }
+                    
+                    .hero-blob { 
+                        width: 300px; 
+                        height: 140px; 
+                        filter: blur(70px); 
+                    }
+
+                    .week-label { 
+                        padding: 8px 20px; 
+                        border-radius: 12px; 
+                        top: -16px; 
+                    }
+                    
+                    .week-label span { 
+                        font-size: clamp(9px, 1.8vw, 11px); 
+                        letter-spacing: 0.3em; 
+                    }
+
+                    .weeks-section {
+                        gap: 60px;
+                    }
+
+                    .week-card { 
+                        padding: 28px 8px 16px 8px; 
+                        border-radius: 20px; 
+                    }
+                    
+                    .week-table thead th { 
+                        padding: 8px 2px; 
+                        font-size: 8px; 
+                    }
+                    
+                    .week-table tbody td {
+                        padding: 6px 2px;
+                    }
+                    
+                    .week-table tbody td input { 
+                        min-width: 32px;
+                        max-width: 44px; 
+                        height: 36px; 
+                        font-size: 12px; 
+                    }
+
+                    .set-all-select { 
+                        min-width: 36px;
+                        max-width: 50px; 
+                        height: 34px; 
+                        font-size: 10px; 
+                    }
+
+                    .salary-section { 
+                        padding: 40px 12px; 
+                        border-radius: 1.5rem; 
+                    }
+                    
+                    .salary-grid { 
+                        grid-template-columns: 1fr; 
+                        gap: 14px; 
+                    }
+                    
+                    .salary-card { 
+                        border-radius: 1.25rem; 
+                    }
+                    
+                    .card-inner { 
+                        padding: 20px 16px; 
+                        flex-direction: column; 
+                        align-items: center; 
+                        text-align: center; 
+                        gap: 8px; 
+                    }
+                    
+                    .card-left, .card-center, .card-right { 
+                        width: 100%; 
+                        text-align: center;
+                    }
+                    
+                    .card-center h3 { 
+                        font-size: clamp(1rem, 4.5vw, 1.3rem); 
+                        white-space: normal; 
+                    }
+                    
+                    .card-right .totalNeto { 
+                        font-size: clamp(18px, 6vw, 24px); 
+                    }
+
+                    .expandable-content { 
+                        padding: 0 16px; 
+                    }
+                    
+                    .expandable-grid { 
+                        grid-template-columns: 1fr; 
+                    }
                 }
-                @media (max-width: 420px) {
-                    .week-table { min-width: 520px; }
-                    .week-table tbody td input { width: 40px; height: 34px; font-size: 12px; }
-                    .hero-section { padding: 28px 12px; }
+                
+                @media (max-width: 480px) {
+                    .main-container {
+                        padding: 0 6px;
+                    }
+                    
+                    .hero-section {
+                        padding: 28px 8px;
+                        border-radius: 1.25rem;
+                    }
+                    
+                    .week-table thead th { 
+                        font-size: 7px; 
+                        padding: 6px 1px; 
+                    }
+                    
+                    .week-table tbody td input { 
+                        min-width: 28px;
+                        max-width: 40px; 
+                        height: 34px; 
+                        font-size: 11px;
+                        border-radius: 8px;
+                    }
+                    
+                    .week-card { 
+                        padding: 24px 4px 12px 4px;
+                        border-radius: 16px;
+                    }
+                    
+                    .week-label { 
+                        padding: 6px 14px; 
+                    }
+                    
+                    .week-label span { 
+                        font-size: 9px; 
+                        letter-spacing: 0.22em; 
+                    }
+                    
+                    .set-all-select { 
+                        min-width: 32px;
+                        max-width: 45px; 
+                        height: 32px; 
+                        font-size: 9px; 
+                    }
+
+                    .card-center h3 { 
+                        font-size: 1.3rem; 
+                    }
+                    
+                    .card-right .totalNeto { 
+                        font-size: 18px; 
+                    }
+                    
+                    .salary-section {
+                        padding: 32px 8px;
+                    }
                 }
 
                 /* Improve accessibility focus */
-                .camera-btn:focus { box-shadow: 0 0 0 3px rgba(34,211,238,0.18); }
-                select:focus, input:focus { outline: 2px solid rgba(16,185,129,0.12); border-color: rgba(16,185,129,0.3); }
-
+                .camera-btn:focus { 
+                    box-shadow: 0 0 0 3px rgba(34,211,238,0.18); 
+                }
+                
+                select:focus, input:focus { 
+                    outline: 2px solid rgba(16,185,129,0.12); 
+                    border-color: rgba(16,185,129,0.3); 
+                }
                 `}
             </style>
 
@@ -350,15 +669,15 @@ function App() {
                 </button>
             </div>
 
-            <div className="max-w-7xl mx-auto space-y-16">
+            <div className="main-container" style={{ paddingTop: '16px', paddingBottom: '40px' }}>
                 <section className="hero-section">
                     <div className="hero-blob" />
-                    <div style={{ position: 'relative', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '32px' }}>
+                    <div style={{ position: 'relative', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '24px' }}>
                         <div className="hero-badge">
                             <ShieldCheck className="text-black" size={40} strokeWidth={2.5} />
                         </div>
                         <div>
-                            <h1 style={{ fontSize: 'clamp(2.4rem, 8vw, 4rem)', fontWeight: '900', letterSpacing: '-0.05em', lineHeight: '1', margin: 0 }}>
+                            <h1 style={{ fontSize: 'clamp(2.2rem, 7vw, 3.6rem)', fontWeight: '900', letterSpacing: '-0.05em', lineHeight: '1', margin: 0 }}>
                                 <span style={{ color: '#ffffff' }}>Orchard</span>
                                 <br />
                                 <span style={{
@@ -369,16 +688,16 @@ function App() {
                                     display: 'inline-block'
                                 }}>TEAM</span>
                             </h1>
-                            <p style={{ color: '#71717a', fontSize: '10px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.4em', marginTop: '12px' }}>
+                            <p style={{ color: '#71717a', fontSize: '10px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.4em', marginTop: '10px' }}>
                                 Precision Management System
                             </p>
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
                             <div style={{
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: '12px',
-                                padding: '10px 20px',
+                                gap: '10px',
+                                padding: '8px 16px',
                                 backgroundColor: 'rgba(255,255,255,0.03)',
                                 borderRadius: '1rem',
                                 border: '1px solid rgba(255,255,255,0.08)',
@@ -402,93 +721,101 @@ function App() {
                     </div>
                 </section>
 
-                <div ref={printRef} className="space-y-16">
+                <div ref={printRef} style={{ width: '100%', maxWidth: '100%' }}>
                     <section className="weeks-section">
                         {WEEKS.map((week, index) => (
                             <div key={index} className="week-wrapper">
                                 <div className="week-label">
-                                    <span style={{ color: '#ffffff', fontSize: '12px', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '0.4em' }}>Semana 0{index + 1}</span>
+                                    <span>SEMANA 0{index + 1}</span>
                                 </div>
                                 <div className="week-card">
-                                    <table className="week-table">
-                                        <thead>
-                                            <tr>
-                                                <th>Miembro / Día</th>
-                                                {week.map(day => (
-                                                    <th key={day.display}>
-                                                        <span style={{ display: 'block', fontSize: '9px', fontWeight: '800', color: '#10b981', textTransform: 'uppercase' }}>{day.dayName.substring(0, 3)}</span>
-                                                        <span style={{ fontSize: '14px', fontWeight: '900', color: '#064e3b' }}>{day.display}</span>
-                                                    </th>
-                                                ))}
-                                                <th style={{ fontSize: '11px', fontWeight: '900', color: '#059669', textTransform: 'uppercase' }}>Total</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <tr style={{ backgroundColor: '#f0fdf4', borderRadius: '20px' }}>
-                                                <td style={{ padding: '16px', textAlign: 'center', borderRadius: '20px 0 0 20px' }}>
-                                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '10px', fontWeight: '900', color: '#059669' }}>
-                                                        <TrendingUp size={14} /> SET ALL
-                                                    </div>
-                                                </td>
-                                                {week.map(day => (
-                                                    <td key={`set-all-${day.display}`} style={{ padding: '8px', textAlign: 'center' }}>
-                                                        <select
-                                                            value=""
-                                                            onChange={(e) => handleSetAll(day.display, e.target.value)}
-                                                            className="set-all-select"
-                                                        >
-                                                            <option value="">+</option>
-                                                            <option value="CLEAR" style={{ color: 'red', fontWeight: 'bold' }}> - </option>
-                                                            {Array.from({ length: 24 }, (_, i) => (i + 1) / 2).map((val) => (
-                                                                <option key={val} value={val}>{val}h</option>
-                                                            ))}
-                                                        </select>
+                                    <div className="table-container">
+                                        <table className="week-table">
+                                            <thead>
+                                                <tr>
+                                                    <th style={{ minWidth: '80px' }}>MIEMBRO / DÍA</th>
+                                                    {week.map(day => (
+                                                        <th key={day.display}>
+                                                            <span className="day-abbrev">{day.dayName.substring(0, 3)}</span>
+                                                            <span className="day-display">{day.display}</span>
+                                                        </th>
+                                                    ))}
+                                                    <th style={{ fontSize: '11px', fontWeight: '900', color: '#059669', textTransform: 'uppercase', minWidth: '60px' }}>TOTAL</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr style={{ backgroundColor: '#f0fdf4', borderRadius: '20px' }}>
+                                                    <td style={{ padding: '16px 8px', textAlign: 'center', borderRadius: '20px 0 0 20px' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '10px', fontWeight: '900', color: '#059669' }}>
+                                                            <TrendingUp size={14} /> SET ALL
+                                                        </div>
                                                     </td>
-                                                ))}
-                                                <td style={{ borderRadius: '0 20px 20px 0' }}></td>
-                                            </tr>
-                                            <tr style={{ height: '12px' }}></tr>
-                                            {TEAM_MEMBERS.map((member) => {
-                                                const nombresFemeninos = ['MARIA', 'ANA', 'LAURA', 'ELENA', 'SARA', 'CARMEN', 'LUCIA', 'CONY', 'GHIIS', 'MELANY'];
-                                                const esFemenino = nombresFemeninos.includes(member.toUpperCase());
-                                                return (
-                                                    <tr key={member}>
-                                                        <td style={{ padding: '16px', textAlign: 'center', fontWeight: '800', fontSize: '13px', color: esFemenino ? '#022c22' : '#334155', backgroundColor: '#f8fafc', borderRadius: '16px 0 0 16px' }}>{member}</td>
-                                                        {week.map(day => (
-                                                            <td key={day.display} style={{ padding: '8px', textAlign: 'center', backgroundColor: '#ffffff', borderBottom: '1px solid #f1f5f9' }}>
-                                                                <input
-                                                                    type="text"
-                                                                    value={(hoursData[member] && hoursData[member][day.display]) || ""}
-                                                                    onChange={(e) => handleInputChange(member, day.display, e.target.value)}
-                                                                    placeholder="0.0"
-                                                                    aria-label={`${member} ${day.display}`}
-                                                                />
-                                                            </td>
-                                                        ))}
-                                                        <td style={{ padding: '16px', textAlign: 'center', backgroundColor: '#064e3b', borderRadius: '0 16px 16px 0' }}>
-                                                            <span style={{ color: '#ffffff', fontWeight: '900', fontSize: '14px' }}>{calculateWeeklyMemberTotal(member, week)}</span>
+                                                    {week.map(day => (
+                                                        <td key={`set-all-${day.display}`} style={{ textAlign: 'center' }}>
+                                                            <select
+                                                                value=""
+                                                                onChange={(e) => handleSetAll(day.display, e.target.value)}
+                                                                className="set-all-select"
+                                                            >
+                                                                <option value="">+</option>
+                                                                <option value="CLEAR" style={{ color: 'red', fontWeight: 'bold' }}> - </option>
+                                                                {Array.from({ length: 24 }, (_, i) => (i + 1) / 2).map((val) => (
+                                                                    <option key={val} value={val}>{val}h</option>
+                                                                ))}
+                                                            </select>
                                                         </td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
+                                                    ))}
+                                                    <td style={{ borderRadius: '0 20px 20px 0' }}></td>
+                                                </tr>
+                                                <tr style={{ height: '12px' }}></tr>
+                                                {TEAM_MEMBERS.map((member) => {
+                                                    const nombresFemeninos = ['MARIA', 'ANA', 'LAURA', 'ELENA', 'SARA', 'CARMEN', 'LUCIA', 'CONY', 'GHIS', 'MELANY'];
+                                                    const esFemenino = nombresFemeninos.includes(member.toUpperCase());
+                                                    return (
+                                                        <tr key={member}>
+                                                            <td className="member-name" style={{ padding: '16px 8px', textAlign: 'center', borderRadius: '16px 0 0 16px' }}>{member}</td>
+                                                            {week.map(day => (
+                                                                <td key={day.display} style={{ textAlign: 'center', backgroundColor: '#ffffff', borderBottom: '1px solid #f1f5f9' }}>
+                                                                    <input
+                                                                        type="text"
+                                                                        value={(hoursData[member] && hoursData[member][day.display]) || ""}
+                                                                        onChange={(e) => handleInputChange(member, day.display, e.target.value)}
+                                                                        placeholder="0.0"
+                                                                        aria-label={`${member} ${day.display}`}
+                                                                    />
+                                                                </td>
+                                                            ))}
+                                                            <td style={{ padding: '16px 8px', textAlign: 'center', backgroundColor: '#064e3b', borderRadius: '0 16px 16px 0' }}>
+                                                                <span style={{ color: '#ffffff', fontWeight: '900', fontSize: '14px' }}>{calculateWeeklyMemberTotal(member, week)}</span>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </div>
                             </div>
                         ))}
                     </section>
 
-                    <section className="salary-section">
+                    <section className="salary-section" style={{ marginTop: '60px', padding: '0 20px' }}>
                         <div style={{ textAlign: 'center', marginBottom: '40px' }}>
-                            <h2 style={{ fontSize: 'clamp(1.6rem, 4vw, 2.8rem)', fontWeight: '900', color: '#fff', letterSpacing: '-0.04em', margin: 0 }}>
+                            <h2 style={{ fontSize: 'clamp(1.4rem, 3.5vw, 2.4rem)', fontWeight: '900', color: '#fff', letterSpacing: '-0.04em', margin: 0 }}>
                                 Consolidado de <span style={{ color: '#10b981' }}>Gestión Salarial</span>
                             </h2>
                         </div>
 
-                        <div className="salary-grid">
+                        {/* Contenedor Grid Ajustado */}
+                        <div className="salary-grid" style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+                            gap: '20px',
+                            maxWidth: '1200px',
+                            margin: '0 auto'
+                        }}>
                             {TEAM_MEMBERS.map(member => {
                                 const totalHrs = parseFloat(calculateGrandTotal(member));
-                                const rateGrossTotal = 25.75;
                                 const rateNeto = 21.59;
                                 const rateDeducciones = 4.16;
                                 const totalNeto = (totalHrs * rateNeto).toFixed(2);
@@ -498,14 +825,20 @@ function App() {
                                     <div
                                         key={member}
                                         className="salary-card"
+                                        style={{
+                                            background: 'rgba(255, 255, 255, 0.03)',
+                                            borderRadius: '20px',
+                                            border: '1px solid rgba(255, 255, 255, 0.05)',
+                                            transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                                            overflow: 'hidden',
+                                            cursor: 'pointer'
+                                        }}
                                         onMouseEnter={(e) => {
                                             const target = e.currentTarget;
-                                            if (target && target.style) {
-                                                target.style.borderColor = '#22d3ee';
-                                                target.style.boxShadow = '0 0 40px rgba(34, 211, 238, 0.15)';
-                                            }
+                                            target.style.borderColor = '#22d3ee';
+                                            target.style.boxShadow = '0 0 40px rgba(34, 211, 238, 0.15)';
                                             const expandable = target.querySelector('.expandable-content');
-                                            if (expandable instanceof HTMLElement) {
+                                            if (expandable) {
                                                 expandable.style.maxHeight = '500px';
                                                 expandable.style.opacity = '1';
                                                 expandable.style.paddingTop = '20px';
@@ -513,84 +846,79 @@ function App() {
                                         }}
                                         onMouseLeave={(e) => {
                                             const target = e.currentTarget;
-                                            if (target && target.style) {
-                                                target.style.borderColor = 'rgba(255, 255, 255, 0.05)';
-                                                target.style.boxShadow = 'none';
-                                            }
+                                            target.style.borderColor = 'rgba(255, 255, 255, 0.05)';
+                                            target.style.boxShadow = 'none';
                                             const expandable = target.querySelector('.expandable-content');
-                                            if (expandable instanceof HTMLElement) {
+                                            if (expandable) {
                                                 expandable.style.maxHeight = '0px';
                                                 expandable.style.opacity = '0';
                                                 expandable.style.paddingTop = '0px';
                                             }
                                         }}
                                     >
-                                        <div style={{ padding: '28px', position: 'relative', zIndex: 2 }}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                <div style={{ flex: 1 }}>
-                                                    <p style={{ color: '#52525b', fontSize: '10px', fontWeight: '900', letterSpacing: '0.2em' }}>HOURLY RATE</p>
-                                                    <div style={{ color: '#fff', fontSize: '18px', fontWeight: '800' }}>$25.75 <span style={{ fontSize: '10px', color: '#71717a' }}>GROSS</span></div>
-                                                    <div style={{ color: '#00ffcc', fontSize: '20px', fontWeight: '900' }}>$21.59 <span style={{ fontSize: '10px', color: '#00ffcc' }}>NETO</span></div>
-                                                </div>
-                                                <div style={{ flex: 2, textAlign: 'center' }}>
-                                                    <h3 style={{ fontSize: '2.4rem', fontWeight: '1000', color: '#00ffcc', textTransform: 'uppercase', margin: '0', filter: 'drop-shadow(0 0 15px rgba(0, 255, 204, 0.6))' }}>{member}</h3>
-                                                    <div style={{ color: '#fff', fontWeight: '800', fontSize: '1rem' }}>{totalHrs} HORAS</div>
-                                                </div>
-                                                <div style={{ flex: 1.2, textAlign: 'right' }}>
-                                                    <p style={{ color: '#52525b', fontSize: '10px', fontWeight: '900', letterSpacing: '0.2em' }}>TOTAL NETO</p>
-                                                    <div style={{ fontSize: '28px', fontWeight: '1000', color: '#00ffcc' }}>${totalNeto}</div>
-                                                    <div style={{ fontSize: '12px', color: '#f43f5e', fontWeight: '800' }}>-${totalTaxACC} <span style={{ fontSize: '10px' }}>TAX/ACC</span></div>
-                                                </div>
+                                        <div className="card-inner" style={{ padding: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <div className="card-left">
+                                                <p style={{ color: '#52525b', fontSize: '9px', fontWeight: '900', letterSpacing: '0.1em', margin: 0 }}>RATE</p>
+                                                <div style={{ color: '#fff', fontSize: '14px', fontWeight: '800' }}>$25.75</div>
+                                                <div style={{ color: '#00ffcc', fontSize: '13px', fontWeight: '900' }}>$21.59 <span style={{ fontSize: '9px' }}>NET</span></div>
+                                            </div>
+
+                                            {/* Nombre Ajustado */}
+                                            <div className="card-center" style={{ textAlign: 'center', flex: 1, padding: '0 10px' }}>
+                                                <h3 style={{
+                                                    color: '#00ffcc',
+                                                    fontWeight: '900',
+                                                    textTransform: 'uppercase',
+                                                    margin: '0 0 4px 0',
+                                                    filter: 'drop-shadow(0 0 10px rgba(0, 255, 204, 0.4))',
+                                                    whiteSpace: 'nowrap',
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis'
+                                                }}>
+                                                    {member}
+                                                </h3>
+                                                <div style={{ color: '#fff', fontWeight: '700', fontSize: '0.85rem', opacity: 0.8 }}>{totalHrs} HORAS</div>
+                                            </div>
+
+                                            <div className="card-right" style={{ textAlign: 'right' }}>
+                                                <p style={{ color: '#52525b', fontSize: '9px', fontWeight: '900', letterSpacing: '0.1em', margin: 0 }}>TOTAL NETO</p>
+                                                <div style={{ color: '#fff', fontSize: '18px', fontWeight: '900' }}>${totalNeto}</div>
+                                                <div style={{ fontSize: '11px', color: '#f43f5e', fontWeight: '800' }}>-${totalTaxACC}</div>
                                             </div>
                                         </div>
-                                        <div className="expandable-content">
-                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '30px' }}>
-                                                <div style={{ padding: '15px', borderRadius: '1rem', backgroundColor: 'rgba(0,0,0,0.3)' }}>
-                                                    <h4 style={{ color: '#22d3ee', fontSize: '11px', fontWeight: '900', marginBottom: '8px' }}>CÁLCULO BRUTO</h4>
-                                                    <p style={{ color: '#a1a1aa', fontSize: '10px', lineHeight: '1.6' }}>Multiplicación de horas por <b>$25.75</b>. Incluye base de $23.85 más el <b>8% de Holiday Pay</b>.</p>
+
+                                        <div className="expandable-content" style={{
+                                            maxHeight: '0px',
+                                            opacity: '0',
+                                            overflow: 'hidden',
+                                            transition: 'all 0.5s ease',
+                                            padding: '0 24px'
+                                        }}>
+                                            <div style={{ display: 'grid', gap: '10px', marginBottom: '20px' }}>
+                                                <div style={{ padding: '10px', borderRadius: '12px', backgroundColor: 'rgba(0,0,0,0.2)' }}>
+                                                    <h4 style={{ color: '#22d3ee', fontSize: '10px', fontWeight: '900', margin: '0 0 4px 0' }}>CÁLCULO BRUTO</h4>
+                                                    <p style={{ color: '#a1a1aa', fontSize: '10px', margin: 0 }}>$23.85 + 8% Holiday Pay ($25.75).</p>
                                                 </div>
-                                                <div style={{ padding: '15px', borderRadius: '1rem', backgroundColor: 'rgba(0,0,0,0.3)' }}>
-                                                    <h4 style={{ color: '#f43f5e', fontSize: '11px', fontWeight: '900', marginBottom: '8px' }}>DEDUCCIONES IRD</h4>
-                                                    <p style={{ color: '#a1a1aa', fontSize: '10px', lineHeight: '1.6' }}>Retención de <b>$4.16/hr</b>. Desglose: <b>$3.73 PAYE</b> y <b>$0.43 ACC</b>.</p>
-                                                </div>
-                                                <div style={{ padding: '15px', borderRadius: '1rem', backgroundColor: 'rgba(0,0,0,0.3)' }}>
-                                                    <h4 style={{ color: '#00ffcc', fontSize: '11px', fontWeight: '900', marginBottom: '8px' }}>PAGO NETO</h4>
-                                                    <p style={{ color: '#a1a1aa', fontSize: '10px', lineHeight: '1.6' }}>Representa el dinero real disponible tras obligaciones fiscales en NZ.</p>
+                                                <div style={{ padding: '10px', borderRadius: '12px', backgroundColor: 'rgba(0,0,0,0.2)' }}>
+                                                    <h4 style={{ color: '#f43f5e', fontSize: '10px', fontWeight: '900', margin: '0 0 4px 0' }}>DEDUCCIONES IRD</h4>
+                                                    <p style={{ color: '#a1a1aa', fontSize: '10px', margin: 0 }}>$3.73 PAYE + $0.43 ACC = $4.16/hr.</p>
                                                 </div>
                                             </div>
-                                            <div style={{ paddingBottom: '40px', textAlign: 'center' }}>
-                                                <a
-                                                    href="https://www.paye.net.nz/calculator/"
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
+
+                                            <div style={{ paddingBottom: '24px', textAlign: 'center' }}>
+                                                <a href="https://www.paye.net.nz/calculator/" target="_blank" rel="noopener noreferrer"
                                                     style={{
                                                         display: 'inline-block',
-                                                        padding: '12px 24px',
+                                                        padding: '8px 16px',
                                                         backgroundColor: 'rgba(34, 211, 238, 0.1)',
                                                         border: '1px solid #22d3ee',
-                                                        borderRadius: '15px',
+                                                        borderRadius: '10px',
                                                         color: '#22d3ee',
-                                                        fontSize: '12px',
+                                                        fontSize: '10px',
                                                         fontWeight: '900',
-                                                        textDecoration: 'none',
-                                                        transition: 'all 0.3s ease'
-                                                    }}
-                                                    onMouseEnter={(e) => {
-                                                        const el = e.currentTarget;
-                                                        if (el && el.style) {
-                                                            el.style.backgroundColor = '#22d3ee';
-                                                            el.style.color = '#000';
-                                                        }
-                                                    }}
-                                                    onMouseLeave={(e) => {
-                                                        const el = e.currentTarget;
-                                                        if (el && el.style) {
-                                                            el.style.backgroundColor = 'rgba(34, 211, 238, 0.1)';
-                                                            el.style.color = '#22d3ee';
-                                                        }
-                                                    }}
-                                                >
-                                                    ABRIR CALCULADORA OFICIAL NZ
+                                                        textDecoration: 'none'
+                                                    }}>
+                                                    CALCULADORA OFICIAL NZ
                                                 </a>
                                             </div>
                                         </div>
