@@ -1,16 +1,30 @@
 import { useState, useEffect, useRef } from 'react';
-import { Calendar, TrendingUp, ShieldCheck, Camera } from 'lucide-react';
+import { Calendar, TrendingUp, ShieldCheck, Camera, MapPin } from 'lucide-react';
 import { db } from './firebase';
 import { ref, onValue, set } from "firebase/database";
 import html2canvas from 'html2canvas';
 import emailjs from '@emailjs/browser';
+
+// Map (Leaflet) imports
+// NOTE: Requires these packages installed: react-leaflet, leaflet
+import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
+// Fix default Leaflet icon paths when bundlers don't handle them automatically
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+});
 
 const TEAM_MEMBERS = ["Santiago", "Alan", "Ghis", "Diego", "Cony", "Juan", "Melany"];
 
 const EMAILS = {
     Santiago: 'santiagocrescimbeny@gmail.com',
     Alan: 'alan.carrizo@hotmail.com',
-    Ghis: '',
+    Ghis: 'ghislayne.gr@gmail.com',
     Diego: 'diegomartinaviles@gmail.com',
     Cony: 'kony.e.r@gmail.com',
     Juan: 'juanr00729@gmail.com',
@@ -20,7 +34,13 @@ const EMAILS = {
 const EMAILJS_CONFIG = {
     publicKey: 'wri9yLRhHrRSpDay5',
     serviceId: 'hellorchardteam',
-    templateId: 'template_3ldkmmt' 
+    templateId: 'template_3ldkmmt'
+};
+
+const EMOJI_MARKERS = {
+    RAIN: '🌧️',
+    MAN_NO: '🙅‍♂️',
+    WOMAN_NO: '🙅‍♀️'
 };
 
 const generateWeeks = () => {
@@ -33,7 +53,8 @@ const generateWeeks = () => {
             if (current <= end) {
                 week.push({
                     display: current.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }),
-                    dayName: current.toLocaleDateString('es-ES', { weekday: 'long' })
+                    dayName: current.toLocaleDateString('es-ES', { weekday: 'long' }),
+                    iso: current.toISOString().slice(0,10)
                 });
             }
             current.setDate(current.getDate() + 1);
@@ -47,17 +68,20 @@ const WEEKS = generateWeeks();
 
 function App() {
     const [hoursData, setHoursData] = useState({});
+    const [locations, setLocations] = useState({}); // { [dateLabel]: { lat, lng, name } }
     const [isOnline, setIsOnline] = useState(false);
     const [iscapturing, setIsCapturing] = useState(false);
     const [countdowns, setCountdowns] = useState({});
     const [flashes, setFlashes] = useState({});
     const [notices, setNotices] = useState({});
+    const [openDropdowns, setOpenDropdowns] = useState({}); // track per-day set-all dropdown open state
+    const [openMapModal, setOpenMapModal] = useState(null); // dateLabel for which modal is open
     const printRef = useRef();
     const intervalsRef = useRef({});
 
     useEffect(() => {
         const hoursRef = ref(db, 'work_hours/');
-        return onValue(hoursRef, (snapshot) => {
+        const unsubscribeHours = onValue(hoursRef, (snapshot) => {
             const data = snapshot.val();
             if (data) {
                 setHoursData(data);
@@ -67,6 +91,18 @@ function App() {
                 setHoursData(initial);
             }
         }, () => setIsOnline(false));
+
+        const locRef = ref(db, 'work_locations/');
+        const unsubscribeLoc = onValue(locRef, (snap) => {
+            const data = snap.val();
+            if (data) setLocations(data);
+            else setLocations({});
+        });
+
+        return () => {
+            unsubscribeHours();
+            unsubscribeLoc();
+        };
     }, []);
 
     useEffect(() => {
@@ -79,7 +115,17 @@ function App() {
         };
     }, []);
 
+    // close dropdowns when clicking outside
+    useEffect(() => {
+        const handleDocClick = () => {
+            setOpenDropdowns({});
+        };
+        document.addEventListener('click', handleDocClick);
+        return () => document.removeEventListener('click', handleDocClick);
+    }, []);
+
     const syncWithFirebase = (newData) => set(ref(db, 'work_hours/'), newData);
+    const syncLocations = (newLocs) => set(ref(db, 'work_locations/'), newLocs);
 
     const handleInputChange = (member, dateLabel, value) => {
         const newData = { ...hoursData, [member]: { ...(hoursData[member] || {}), [dateLabel]: value } };
@@ -91,7 +137,7 @@ function App() {
         const isClearAction = value === "CLEAR";
         const mensaje = isClearAction
             ? `¿Deseas LIMPIAR todas las horas del equipo para el día ${dateLabel}?`
-            : `¿Aplicar ${value}h a todo el equipo para el día ${dateLabel}?`;
+            : `¿Aplicar "${value}" a todo el equipo para el día ${dateLabel}?`;
 
         if (window.confirm(mensaje)) {
             const newData = { ...hoursData };
@@ -103,10 +149,32 @@ function App() {
             setHoursData(newData);
             syncWithFirebase(newData);
         }
+        setOpenDropdowns(prev => ({ ...prev, [dateLabel]: false }));
+    };
+
+    const setLocationForDate = async (dateLabel, lat, lng) => {
+        // reverse geocode with Nominatim for readable name
+        let name = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+        try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`);
+            if (res.ok) {
+                const json = await res.json();
+                if (json && json.display_name) name = json.display_name;
+            }
+        } catch (e) {
+            console.warn('Reverse geocode failed', e);
+        }
+        const newLocs = { ...locations, [dateLabel]: { lat, lng, name } };
+        setLocations(newLocs);
+        syncLocations(newLocs);
+    };
+
+    const isEmojiMarker = (v) => {
+        return v === EMOJI_MARKERS.RAIN || v === EMOJI_MARKERS.MAN_NO || v === EMOJI_MARKERS.WOMAN_NO;
     };
 
     const parseHours = (val) => {
-        if (!val || val === "") return 0;
+        if (!val || val === "" || isEmojiMarker(val)) return 0;
         let strVal = String(val).replace(',', '.');
         if (strVal.includes(':')) {
             const [h, m] = strVal.split(':');
@@ -390,17 +458,81 @@ function App() {
         intervalsRef.current[member] = id;
     };
 
+    // NEW: capture helper that clones the print area, expands internal scrollable containers and captures the full height.
+    const captureFullAreaClone = async (rootEl) => {
+        const clone = rootEl.cloneNode(true);
+
+        clone.style.maxWidth = '1200px';
+        clone.style.width = '1200px';
+        clone.style.boxSizing = 'border-box';
+        clone.style.overflow = 'visible';
+
+        const cam = clone.querySelector('.camera-container');
+        if (cam) cam.remove();
+
+        clone.querySelectorAll('.table-container').forEach(tc => {
+            tc.style.overflow = 'visible';
+            tc.style.maxHeight = 'none';
+            tc.style.webkitOverflowScrolling = 'auto';
+        });
+
+        clone.querySelectorAll('.expandable-content').forEach(ec => {
+            ec.style.maxHeight = 'none';
+            ec.style.opacity = '1';
+            ec.style.paddingTop = '20px';
+        });
+
+        clone.querySelectorAll('.setall-panel').forEach(p => {
+            p.style.position = 'absolute';
+            p.style.zIndex = '1000';
+        });
+
+        const wrapper = document.createElement('div');
+        wrapper.style.position = 'fixed';
+        wrapper.style.left = '-9999px';
+        wrapper.style.top = '0';
+        wrapper.style.width = '1200px';
+        wrapper.style.overflow = 'visible';
+        wrapper.appendChild(clone);
+        document.body.appendChild(wrapper);
+
+        await new Promise(r => setTimeout(r, 350));
+
+        const canvas = await html2canvas(clone, {
+            backgroundColor: '#050505',
+            scale: Math.min(2, window.devicePixelRatio || 1),
+            logging: false,
+            useCORS: true,
+            windowWidth: clone.scrollWidth || 1200,
+            windowHeight: clone.scrollHeight || document.documentElement.scrollHeight
+        });
+
+        document.body.removeChild(wrapper);
+
+        return canvas;
+    };
+
     const handleScreenshot = async () => {
         if (iscapturing) return;
         setIsCapturing(true);
+
         try {
-            const element = printRef.current;
-            const canvas = await html2canvas(element, {
-                backgroundColor: '#050505',
-                scale: 2,
-                logging: false,
-                useCORS: true
-            });
+            const root = printRef.current;
+            if (!root) throw new Error('Elemento a capturar no encontrado');
+
+            const mobileBreakpoint = 768;
+            let canvas;
+            if (window.innerWidth <= mobileBreakpoint) {
+                canvas = await captureFullAreaClone(root);
+            } else {
+                canvas = await html2canvas(root, {
+                    backgroundColor: '#050505',
+                    scale: Math.min(2.5, window.devicePixelRatio || 1),
+                    logging: false,
+                    useCORS: true
+                });
+            }
+
             const data = canvas.toDataURL('image/png');
             const link = document.createElement('a');
             link.href = data;
@@ -422,6 +554,134 @@ function App() {
             <path d="M3 6.8l8.2 6.2a2 2 0 0 0 2.6 0L22 6.8" stroke="#10b981" strokeWidth="1.4" strokeLinejoin="round" strokeLinecap="round" />
         </svg>
     );
+
+    // hours quick options for panel
+    const hoursOptions = Array.from({ length: 24 }, (_, i) => ((i + 1) / 2).toString());
+
+    // Map modal with search (Nominatim)
+    const MapPickerModal = ({ dateLabel, initialPos, onClose, onConfirm }) => {
+        const [marker, setMarker] = useState(initialPos || null);
+        const [query, setQuery] = useState('');
+        const [results, setResults] = useState([]);
+        const [isSearching, setIsSearching] = useState(false);
+
+        function ClickHandler() {
+            useMapEvents({
+                click(e) {
+                    setMarker({ lat: e.latlng.lat, lng: e.latlng.lng });
+                }
+            });
+            return null;
+        }
+
+        const searchAddress = async (q) => {
+            if (!q || q.trim() === '') return;
+            setIsSearching(true);
+            try {
+                const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(q)}&limit=6`;
+                const res = await fetch(url);
+                if (!res.ok) throw new Error('Search failed');
+                const json = await res.json();
+                setResults(json || []);
+            } catch (e) {
+                console.error('Search error', e);
+                setResults([]);
+            } finally {
+                setIsSearching(false);
+            }
+        };
+
+        return (
+            <div
+                style={{
+                    position: 'fixed',
+                    inset: 0,
+                    zIndex: 2000,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: 'rgba(2,6,23,0.55)',
+                    padding: 20
+                }}
+                onClick={onClose}
+                aria-modal="true"
+                role="dialog"
+            >
+                <div style={{ width: '100%', maxWidth: 980, height: '80vh', borderRadius: 12, overflow: 'hidden', background: '#fff' }}
+                    onClick={(e) => e.stopPropagation()}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', borderBottom: '1px solid #eee' }}>
+                        <div style={{ fontWeight: 900 }}>Buscar / seleccionar ubicación - {dateLabel}</div>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            <button onClick={onClose} style={{ padding: '8px 10px', borderRadius: 8, background: '#efefef', border: 'none', fontWeight: 700 }}>Cerrar</button>
+                            <button
+                                onClick={() => {
+                                    if (!marker) return alert('Seleccione un punto en el mapa o desde resultados');
+                                    onConfirm(marker.lat, marker.lng);
+                                    onClose();
+                                }}
+                                style={{ padding: '8px 10px', borderRadius: 8, background: '#10b981', color: '#fff', border: 'none', fontWeight: 900 }}
+                            >
+                                Guardar ubicación
+                            </button>
+                        </div>
+                    </div>
+
+                    <div style={{ display: 'flex', height: 'calc(100% - 48px)' }}>
+                        <div style={{ width: 360, borderRight: '1px solid #eee', padding: 12, overflowY: 'auto' }}>
+                            <div style={{ marginBottom: 8 }}>
+                                <input
+                                    placeholder="Buscar dirección, calle, ciudad..."
+                                    value={query}
+                                    onChange={(e) => setQuery(e.target.value)}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') searchAddress(query); }}
+                                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #ddd' }}
+                                />
+                                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                                    <button onClick={() => searchAddress(query)} style={{ padding: '8px 10px', borderRadius: 8, background: '#10b981', color: '#fff', border: 'none', fontWeight: 900 }}>
+                                        {isSearching ? 'Buscando...' : 'Buscar'}
+                                    </button>
+                                    <button onClick={() => { setQuery(''); setResults([]); }} style={{ padding: '8px 10px', borderRadius: 8, background: '#efefef', border: 'none', fontWeight: 800 }}>
+                                        Limpiar
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div>
+                                <div style={{ fontWeight: 900, marginBottom: 8 }}>Resultados</div>
+                                {results.length === 0 && <div style={{ color: '#666', fontSize: 13 }}>Sin resultados</div>}
+                                {results.map((r, i) => (
+                                    <div key={i} onClick={() => {
+                                        setMarker({ lat: parseFloat(r.lat), lng: parseFloat(r.lon) });
+                                    }} style={{ cursor: 'pointer', padding: 8, borderRadius: 8, background: '#fafafa', marginBottom: 8, border: marker && marker.lat === parseFloat(r.lat) && marker.lng === parseFloat(r.lon) ? '2px solid #10b981' : '1px solid #eee' }}>
+                                        <div style={{ fontWeight: 800 }}>{r.display_name.split(',')[0]}</div>
+                                        <div style={{ fontSize: 12, color: '#555' }}>{r.display_name}</div>
+                                    </div>
+                                ))}
+                            </div>
+
+                        </div>
+
+                        <div style={{ flex: 1 }}>
+                            <MapContainer center={ initialPos ? [initialPos.lat, initialPos.lng] : [ -36.8485, 174.7633 ] } zoom={13} style={{ height: '100%', width: '100%' }}>
+                                <TileLayer
+                                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                />
+                                <ClickHandler />
+                                {marker && (
+                                    <Marker position={[marker.lat, marker.lng]}>
+                                        <Popup>
+                                            {marker.lat.toFixed(5)}, {marker.lng.toFixed(5)}
+                                        </Popup>
+                                    </Marker>
+                                )}
+                            </MapContainer>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
 
     return (
         <div className="min-h-screen bg-[#050505] font-sans text-slate-300" style={{ overflowX: 'hidden', width: '100vw', maxWidth: '100%', padding: '0' }}>
@@ -579,7 +839,7 @@ function App() {
                     transform: translateX(-50%);
                     width: 400px;
                     height: 200px;
-                    background-color: rgba(16, 185, 129, 0.15);
+                    background-color: rgba(16, 185, 129, 0.61);
                     filter: blur(100px);
                     pointer-events: none;
                 }
@@ -597,6 +857,7 @@ function App() {
                     max-width: 1400px;
                     margin: 0 auto;
                     padding: 0 16px;
+                    background-color: rgb(8, 52, 11);
                 }
 
                 /* WEEKS / TABLES */
@@ -656,7 +917,6 @@ function App() {
                     min-width: 100%;
                 }
 
-                /* Responsive date text */
                 .week-table thead th {
                     padding: 12px 4px;
                     text-align: center;
@@ -672,15 +932,15 @@ function App() {
                     color: #10b981;
                     font-weight: 800;
                     font-size: clamp(8px,14:38, 1.6vw, 12px);
-text-transform: uppercase;
-letter-spacing: 0.06em;
-}
-.week-table thead th .day-display {
-display: block;
-color: #064e3b;
-font-weight: 900;
-font-size: clamp(12px, 3vw, 16px);
-}
+                    text-transform: uppercase;
+                    letter-spacing: 0.06em;
+                }
+                .week-table thead th .day-display {
+                    display: block;
+                    color: #064e3b;
+                    font-weight: 900;
+                    font-size: clamp(12px, 3vw, 16px);
+                }
             .week-table tbody td {
                 padding: 8px 4px;
                 text-align: center;
@@ -700,8 +960,8 @@ font-size: clamp(12px, 3vw, 16px);
                 font-size: clamp(11px, 1.8vw, 13px);
                 box-sizing: border-box;
             }
-            
-            .set-all-select {
+
+            .setall-button {
                 width: clamp(40px, 6.5vw, 65px);
                 min-width: 40px;
                 max-width: 65px;
@@ -715,15 +975,50 @@ font-size: clamp(12px, 3vw, 16px);
                 text-align: center;
                 cursor: pointer;
                 box-sizing: border-box;
+                position: relative;
             }
-
-            /* Member name responsive */
-            .member-name {
-                font-size: clamp(11px, 2.2vw, 14px);
+            .setall-panel {
+                position: absolute;
+                top: calc(100% + 8px);
+                left: 50%;
+                transform: translateX(-50%);
+                width: 320px;
+                max-width: 86vw;
+                background: #ffffff;
+                color: #0f172a;
+                border-radius: 12px;
+                box-shadow: 0 10px 30px rgba(2,6,23,0.2);
+                border: 1px solid rgba(6,95,70,0.06);
+                z-index: 60;
+                padding: 12px;
+            }
+            .setall-panel .panel-row {
+                display: flex;
+                gap: 8px;
+                margin-bottom: 8px;
+                flex-wrap: wrap;
+            }
+            .panel-section-title {
+                font-size: 11px;
+                font-weight: 900;
+                color: #064e3b;
+                margin: 6px 0 8px 0;
+            }
+            .panel-option {
+                padding: 8px 10px;
+                border-radius: 8px;
+                background: #f8fafc;
+                border: 1px solid rgba(6,95,70,0.04);
+                cursor: pointer;
                 font-weight: 800;
-                color: #334155;
-                background-color: #f8fafc;
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
             }
+            .panel-option:hover { box-shadow: 0 6px 18px rgba(16,185,129,0.06); transform: translateY(-2px); }
+
+            .location-btn { background: transparent; border: none; cursor: pointer; padding: 6px; border-radius: 8px; display: inline-flex; align-items: center; gap: 6px; }
+            .location-chip { background: #ecfdf5; color: #064e3b; padding: 4px 8px; border-radius: 8px; font-weight: 800; font-size: 12px; }
 
             /* SALARY CARDS */
             .salary-section {
@@ -860,6 +1155,7 @@ font-size: clamp(12px, 3vw, 16px);
                 .card-center h3 { font-size: 1.3rem; }
                 .card-right .totalNeto { font-size: 18px; }
                 .salary-section { padding: 32px 8px; }
+                .setall-panel { width: 280px; }
             }
 
             /* Improve accessibility focus */
@@ -883,7 +1179,7 @@ font-size: clamp(12px, 3vw, 16px);
             }
             .email-send-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(16,185,129,0.06); }
             .email-send-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-            `}
+                `}
             </style>
 
             <div className="camera-container">
@@ -956,11 +1252,96 @@ font-size: clamp(12px, 3vw, 16px);
                                         <table className="week-table">
                                             <thead>
                                                 <tr>
-                                                    <th style={{ minWidth: '80px' }}>MIEMBRO / DÍA</th>
+                                                    <th style={{ minWidth: '120px', textAlign: 'left', paddingLeft: 12 }}>MIEMBRO / DÍA</th>
                                                     {week.map(day => (
-                                                        <th key={day.display}>
-                                                            <span className="day-abbrev">{day.dayName.substring(0, 3)}</span>
-                                                            <span className="day-display">{day.display}</span>
+                                                        <th key={day.display} style={{ position: 'relative', paddingBottom: 24 }}>
+                                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                                                                <div style={{ fontSize: 11, fontWeight: 900, color: '#64748b' }}>{day.dayName.substring(0,3).toUpperCase()}</div>
+                                                                <div style={{ fontSize: 13, fontWeight: 900, color: '#064e3b' }}>{day.display}</div>
+
+                                                                {/* LOCATION BUTTON (above dropdown) */}
+                                                                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                                                    <button
+                                                                        className="location-btn"
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            setOpenMapModal(day.display);
+                                                                        }}
+                                                                        title={locations[day.display] ? locations[day.display].name : 'Marcar ubicación'}
+                                                                    >
+                                                                        <MapPin size={16} color="#10b981" />
+                                                                    </button>
+                                                                    {locations[day.display] && (
+                                                                        <div className="location-chip" title={locations[day.display].name}>
+                                                                            {locations[day.display].name.split(',')[0]}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+
+                                                                {/* SET-ALL custom button + panel (positioned under header) */}
+                                                                <div style={{ marginTop: 6, display: 'flex', justifyContent: 'center' }} onClick={(e) => e.stopPropagation()}>
+                                                                    <button
+                                                                        className="setall-button"
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            setOpenDropdowns(prev => ({ ...prev, [day.display]: !prev[day.display] }));
+                                                                        }}
+                                                                        aria-expanded={!!openDropdowns[day.display]}
+                                                                        aria-haspopup="true"
+                                                                        title="Abrir opciones"
+                                                                    >
+                                                                        +
+                                                                    </button>
+
+                                                                    {openDropdowns[day.display] && (
+                                                                        <div
+                                                                            className="setall-panel"
+                                                                            onClick={(e) => e.stopPropagation()}
+                                                                            role="dialog"
+                                                                            aria-label={`Opciones rápidas para ${day.display}`}
+                                                                        >
+                                                                            <div style={{ fontWeight: 900, color: '#064e3b', marginBottom: 8 }}>Marcadores</div>
+                                                                            <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+                                                                                <div className="panel-option" onClick={() => handleSetAll(day.display, EMOJI_MARKERS.RAIN)}>
+                                                                                    <span style={{ fontSize: '18px' }}>{EMOJI_MARKERS.RAIN}</span>
+                                                                                    <span style={{ fontSize: '12px' }}>Lluvia</span>
+                                                                                </div>
+                                                                                <div className="panel-option" onClick={() => handleSetAll(day.display, EMOJI_MARKERS.MAN_NO)}>
+                                                                                    <span style={{ fontSize: '18px' }}>{EMOJI_MARKERS.MAN_NO}</span>
+                                                                                    <span style={{ fontSize: '12px' }}>No asis. (H)</span>
+                                                                                </div>
+                                                                                <div className="panel-option" onClick={() => handleSetAll(day.display, EMOJI_MARKERS.WOMAN_NO)}>
+                                                                                    <span style={{ fontSize: '18px' }}>{EMOJI_MARKERS.WOMAN_NO}</span>
+                                                                                    <span style={{ fontSize: '12px' }}>No asis. (M)</span>
+                                                                                </div>
+                                                                            </div>
+
+                                                                            <div style={{ height: '1px', background: 'rgba(6,95,70,0.04)', margin: '8px 0' }} />
+
+                                                                            <div style={{ fontWeight: 900, color: '#064e3b', marginBottom: 8 }}>Horas rápidas</div>
+                                                                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                                                                                {hoursOptions.slice(0, 12).map(h => (
+                                                                                    <div key={h} className="panel-option" onClick={() => handleSetAll(day.display, h)}>
+                                                                                        <span style={{ fontSize: '12px' }}>{h}h</span>
+                                                                                    </div>
+                                                                                ))}
+                                                                            </div>
+                                                                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                                                                                {hoursOptions.slice(12).map(h => (
+                                                                                    <div key={h} className="panel-option" onClick={() => handleSetAll(day.display, h)}>
+                                                                                        <span style={{ fontSize: '12px' }}>{h}h</span>
+                                                                                    </div>
+                                                                                ))}
+                                                                            </div>
+
+                                                                            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
+                                                                                <button className="btn-clear" onClick={() => handleSetAll(day.display, "CLEAR")}>Limpiar</button>
+                                                                                <button className="btn-close" onClick={() => setOpenDropdowns(prev => ({ ...prev, [day.display]: false }))}>Cerrar</button>
+                                                                            </div>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
                                                         </th>
                                                     ))}
                                                     <th style={{ fontSize: '11px', fontWeight: '900', color: '#059669', textTransform: 'uppercase', minWidth: '60px' }}>TOTAL</th>
@@ -975,17 +1356,7 @@ font-size: clamp(12px, 3vw, 16px);
                                                     </td>
                                                     {week.map(day => (
                                                         <td key={`set-all-${day.display}`} style={{ textAlign: 'center' }}>
-                                                            <select
-                                                                value=""
-                                                                onChange={(e) => handleSetAll(day.display, e.target.value)}
-                                                                className="set-all-select"
-                                                            >
-                                                                <option value="">+</option>
-                                                                <option value="CLEAR" style={{ color: 'red', fontWeight: 'bold' }}> - </option>
-                                                                {Array.from({ length: 24 }, (_, i) => (i + 1) / 2).map((val) => (
-                                                                    <option key={val} value={val}>{val}h</option>
-                                                                ))}
-                                                            </select>
+                                                            <div style={{ height: '34px' }} />
                                                         </td>
                                                     ))}
                                                     <td style={{ borderRadius: '0 20px 20px 0' }}></td>
@@ -998,18 +1369,24 @@ font-size: clamp(12px, 3vw, 16px);
                                                     return (
                                                         <tr key={member} data-member={member}>
                                                             <td className="member-name" style={{ padding: '16px 8px', textAlign: 'center', borderRadius: '16px 0 0 16px' }}>{member}</td>
-                                                            {week.map(day => (
-                                                                <td key={day.display} style={{ textAlign: 'center', backgroundColor: '#ffffff', borderBottom: '1px solid #f1f5f9' }}>
-                                                                    <input
-                                                                        type="text"
-                                                                        value={(hoursData[member] && hoursData[member][day.display]) || ""}
-                                                                        onChange={(e) => handleInputChange(member, day.display, e.target.value)}
-                                                                        placeholder="0.0"
-                                                                        aria-label={`${member} ${day.display}`}
-                                                                        className={isBlinking ? 'blinking-input' : ''}
-                                                                    />
-                                                                </td>
-                                                            ))}
+                                                            {week.map(day => {
+                                                                const cellVal = (hoursData[member] && hoursData[member][day.display]) || "";
+                                                                return (
+                                                                    <td key={day.display} style={{ textAlign: 'center', backgroundColor: '#ffffff', borderBottom: '1px solid #f1f5f9' }}>
+                                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                                            <input
+                                                                                type="text"
+                                                                                value={cellVal}
+                                                                                onChange={(e) => handleInputChange(member, day.display, e.target.value)}
+                                                                                placeholder="0.0"
+                                                                                aria-label={`${member} ${day.display}`}
+                                                                                className={isBlinking ? 'blinking-input' : ''}
+                                                                                style={{ textAlign: 'center', width: 64, padding: '6px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.06)' }}
+                                                                            />
+                                                                        </div>
+                                                                    </td>
+                                                                );
+                                                            })}
                                                             <td style={{ padding: '16px 8px', textAlign: 'center', backgroundColor: '#064e3b', borderRadius: '0 16px 16px 0' }} className={isBlinking ? 'blinking-week-total' : ''}>
                                                                 <span style={{ color: '#ffffff', fontWeight: '900', fontSize: '14px' }}>{calculateWeeklyMemberTotal(member, week)}</span>
                                                             </td>
@@ -1160,7 +1537,7 @@ font-size: clamp(12px, 3vw, 16px);
                                                     style={{
                                                         display: 'inline-block',
                                                         padding: '8px 16px',
-                                                        backgroundColor: 'rgba(34, 211, 238, 0.1)',
+                                                        backgroundColor: 'rgba(114, 112, 74, 0.1)',
                                                         border: '1px solid #22d3ee',
                                                         borderRadius: '10px',
                                                         color: '#22d3ee',
@@ -1179,7 +1556,18 @@ font-size: clamp(12px, 3vw, 16px);
                     </section>
                 </div>
             </div>
+
+            {/* Map picker modal */}
+            {openMapModal && (
+                <MapPickerModal
+                    dateLabel={openMapModal}
+                    initialPos={locations[openMapModal] ? { lat: locations[openMapModal].lat, lng: locations[openMapModal].lng } : null}
+                    onClose={() => setOpenMapModal(null)}
+                    onConfirm={(lat, lng) => setLocationForDate(openMapModal, lat, lng)}
+                />
+            )}
         </div>
     );
 }
+
 export default App;
