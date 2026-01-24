@@ -1,70 +1,32 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Calendar, TrendingUp, ShieldCheck, Camera, MapPin } from 'lucide-react';
 import { db } from './firebase';
 import { ref, onValue, set } from "firebase/database";
 import html2canvas from 'html2canvas';
 import emailjs from '@emailjs/browser';
 
-// Map (Leaflet) imports
-// NOTE: Requires these packages installed: react-leaflet, leaflet
-import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from 'react-leaflet';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
+import MapPickerModal from './components/MapPickerModal.jsx';
+import EmailIcon from './components/EmailIcon.jsx';
+import {
+    TEAM_MEMBERS,
+    EMAILS,
+    EMAILJS_CONFIG,
+    EMOJI_MARKERS,
+    WEEKS,
+    hoursOptions,
+    RATE_NETO,
+    RATE_DEDUCCIONES,
+    RATE_BRUTO_DISPLAY
+} from './components/constants.js';
 
-// Fix default Leaflet icon paths when bundlers don't handle them automatically
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-});
+// Background videos and logo (coloca los archivos en src/video con esos nombres)
+import bg1 from './video/5857693-uhd_3840_2160_25fps.mp4';
+import bg2 from './video/5944788-hd_1920_1080_25fps.mp4';
+import bg3 from './video/istockphoto-2256687292-640_adpp_is.mp4';
 
-const TEAM_MEMBERS = ["Santiago", "Alan", "Ghis", "Diego", "Cony", "Juan", "Melany"];
+const VIDEO_LIST = [bg1, bg2, bg3];
 
-const EMAILS = {
-    Santiago: 'santiagocrescimbeny@gmail.com',
-    Alan: 'alan.carrizo@hotmail.com',
-    Ghis: 'ghislayne.gr@gmail.com',
-    Diego: 'diegomartinaviles@gmail.com',
-    Cony: 'kony.e.r@gmail.com',
-    Juan: 'juanr00729@gmail.com',
-    Melany: 'melagimenez5@gmail.com'
-};
-
-const EMAILJS_CONFIG = {
-    publicKey: 'wri9yLRhHrRSpDay5',
-    serviceId: 'hellorchardteam',
-    templateId: 'template_3ldkmmt'
-};
-
-const EMOJI_MARKERS = {
-    RAIN: '🌧️',
-    MAN_NO: '🙅‍♂️',
-    WOMAN_NO: '🙅‍♀️'
-};
-
-const generateWeeks = () => {
-    const weeks = [];
-    let current = new Date(2026, 0, 19);
-    const end = new Date(2026, 1, 15);
-    while (current <= end) {
-        let week = [];
-        for (let i = 0; i < 7; i++) {
-            if (current <= end) {
-                week.push({
-                    display: current.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }),
-                    dayName: current.toLocaleDateString('es-ES', { weekday: 'long' }),
-                    iso: current.toISOString().slice(0,10)
-                });
-            }
-            current.setDate(current.getDate() + 1);
-        }
-        weeks.push(week);
-    }
-    return weeks;
-};
-
-const WEEKS = generateWeeks();
+const generateEmptyHoursStructure = () => TEAM_MEMBERS.reduce((acc, name) => { acc[name] = {}; return acc; }, {});
 
 function App() {
     const [hoursData, setHoursData] = useState({});
@@ -74,10 +36,15 @@ function App() {
     const [countdowns, setCountdowns] = useState({});
     const [flashes, setFlashes] = useState({});
     const [notices, setNotices] = useState({});
-    const [openDropdowns, setOpenDropdowns] = useState({}); // track per-day set-all dropdown open state
-    const [openMapModal, setOpenMapModal] = useState(null); // dateLabel for which modal is open
+    const [openCellPickers, setOpenCellPickers] = useState({}); // per cell pickers: key = `${member}__${dateLabel}`
+    const [openMapModal, setOpenMapModal] = useState(null); // dateLabel
+    const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
+    const [activeLayerA, setActiveLayerA] = useState(true); // which video layer is visible
+
     const printRef = useRef();
     const intervalsRef = useRef({});
+    const videoARef = useRef(null);
+    const videoBRef = useRef(null);
 
     useEffect(() => {
         const hoursRef = ref(db, 'work_hours/');
@@ -87,7 +54,7 @@ function App() {
                 setHoursData(data);
                 setIsOnline(true);
             } else {
-                const initial = TEAM_MEMBERS.reduce((acc, name) => { acc[name] = {}; return acc; }, {});
+                const initial = generateEmptyHoursStructure();
                 setHoursData(initial);
             }
         }, () => setIsOnline(false));
@@ -115,14 +82,84 @@ function App() {
         };
     }, []);
 
-    // close dropdowns when clicking outside
+    // close cell pickers when clicking outside
     useEffect(() => {
         const handleDocClick = () => {
-            setOpenDropdowns({});
+            setOpenCellPickers({});
         };
         document.addEventListener('click', handleDocClick);
         return () => document.removeEventListener('click', handleDocClick);
     }, []);
+
+    // initialize two video layers and ended handlers
+    useEffect(() => {
+        const a = videoARef.current;
+        const b = videoBRef.current;
+        if (!a || !b) return;
+
+        // initial sources
+        a.src = VIDEO_LIST[0];
+        b.src = VIDEO_LIST[1 % VIDEO_LIST.length];
+
+        a.muted = true;
+        b.muted = true;
+        a.playsInline = true;
+        b.playsInline = true;
+
+        // try to play layer A
+        a.play().catch(() => { /* autoplay may be blocked */ });
+
+        const onEnded = () => {
+            startCrossfadeTo((currentVideoIndex + 1) % VIDEO_LIST.length);
+        };
+
+        a.addEventListener('ended', onEnded);
+        b.addEventListener('ended', onEnded);
+
+        return () => {
+            a.removeEventListener('ended', onEnded);
+            b.removeEventListener('ended', onEnded);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [videoARef.current, videoBRef.current]);
+
+    // when currentVideoIndex or active layer changes we keep state in sync
+    useEffect(() => {
+        // nothing else required here; startCrossfadeTo handles toggling and indexing.
+    }, [currentVideoIndex, activeLayerA]);
+
+    const startCrossfadeTo = (nextIndex) => {
+        const a = videoARef.current;
+        const b = videoBRef.current;
+        if (!a || !b) return;
+
+        const activeIsA = activeLayerA;
+        const activeVid = activeIsA ? a : b;
+        const inactiveVid = activeIsA ? b : a;
+
+        // load next into inactive
+        inactiveVid.src = VIDEO_LIST[nextIndex];
+        inactiveVid.currentTime = 0;
+        inactiveVid.muted = true;
+        inactiveVid.play().catch(() => { /* ignore */ });
+
+        // fade: set inactive opacity = 1, active = 0 (CSS transition handles smoothness)
+        requestAnimationFrame(() => {
+            inactiveVid.style.opacity = '1';
+            activeVid.style.opacity = '0';
+
+            const transitionDuration = 900; // ms - keep in sync with CSS
+            setTimeout(() => {
+                try { activeVid.pause(); } catch (e) {}
+                setActiveLayerA(!activeLayerA);
+                setCurrentVideoIndex(nextIndex);
+            }, transitionDuration + 80);
+        });
+    };
+
+    const playNextVideoManual = () => {
+        startCrossfadeTo((currentVideoIndex + 1) % VIDEO_LIST.length);
+    };
 
     const syncWithFirebase = (newData) => set(ref(db, 'work_hours/'), newData);
     const syncLocations = (newLocs) => set(ref(db, 'work_locations/'), newLocs);
@@ -133,27 +170,21 @@ function App() {
         syncWithFirebase(newData);
     };
 
-    const handleSetAll = (dateLabel, value) => {
-        const isClearAction = value === "CLEAR";
-        const mensaje = isClearAction
-            ? `¿Deseas LIMPIAR todas las horas del equipo para el día ${dateLabel}?`
-            : `¿Aplicar "${value}" a todo el equipo para el día ${dateLabel}?`;
-
-        if (window.confirm(mensaje)) {
-            const newData = { ...hoursData };
-            const finalValue = isClearAction ? "" : value;
-            TEAM_MEMBERS.forEach(member => {
-                if (!newData[member]) newData[member] = {};
-                newData[member][dateLabel] = finalValue;
-            });
-            setHoursData(newData);
-            syncWithFirebase(newData);
-        }
-        setOpenDropdowns(prev => ({ ...prev, [dateLabel]: false }));
+    const handleCellSet = (member, dateLabel, value) => {
+        const newData = { ...hoursData };
+        if (!newData[member]) newData[member] = {};
+        newData[member][dateLabel] = value === "CLEAR" ? "" : value;
+        setHoursData(newData);
+        syncWithFirebase(newData);
+        const key = `${member}__${dateLabel}`;
+        setOpenCellPickers(prev => {
+            const copy = { ...prev };
+            delete copy[key];
+            return copy;
+        });
     };
 
     const setLocationForDate = async (dateLabel, lat, lng) => {
-        // reverse geocode with Nominatim for readable name
         let name = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
         try {
             const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`);
@@ -208,16 +239,11 @@ function App() {
         };
 
         try {
-            console.log('📤 Enviando email a:', recipient);
-            console.log('📋 Datos:', templateParams);
-
             const response = await emailjs.send(
                 EMAILJS_CONFIG.serviceId,
                 EMAILJS_CONFIG.templateId,
                 templateParams
             );
-
-            console.log('✅ Email enviado exitosamente:', response.status, response.text);
 
             setNotices(n => ({ ...n, [member]: '✉️ Email enviado con éxito!' }));
             setTimeout(() => {
@@ -229,8 +255,6 @@ function App() {
             }, 4000);
 
         } catch (error) {
-            console.error('❌ Error al enviar email:', error);
-
             setNotices(n => ({ ...n, [member]: '⚠️ Error al enviar email' }));
             setTimeout(() => {
                 setNotices(n => {
@@ -268,145 +292,6 @@ function App() {
             `Orchard TEAM`
         ];
         return lines.join('\n');
-    };
-
-    const buildHtmlTemplate = (member, totalHrs, rateNeto, rateDeducciones, totalNeto, totalTaxACC) => {
-        const hrs = Number(totalHrs || 0).toFixed(2);
-        const rateNetoFmt = formatNumber(rateNeto);
-        const rateDeduccionesFmt = formatNumber(rateDeducciones);
-        const totalNetoFmt = formatNumber(totalNeto);
-        const totalTaxACCFmt = formatNumber(totalTaxACC);
-
-        return `
-            <!doctype html>
-            <html>
-            <head>
-              <meta charset="utf-8" />
-              <meta name="viewport" content="width=device-width,initial-scale=1" />
-              <title>Resumen de Pago - ${member}</title>
-              <style>
-                body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial; background: #f6fbf7; margin: 0; padding: 24px; color: #0f172a; }
-                .card { max-width: 680px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 6px 24px rgba(6,95,70,0.08); border: 1px solid rgba(6,95,70,0.06); }
-                .header { background: linear-gradient(90deg,#064e3b,#10b981); color: #fff; padding: 20px 28px; }
-                .header h1 { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.01em; }
-                .content { padding: 20px 28px; }
-                table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-                th { text-align: left; padding: 10px 12px; background: #e6fff5; color: #064e3b; font-weight: 800; font-size: 13px; border-bottom: 1px solid rgba(6,95,70,0.06); }
-                td { padding: 10px 12px; border-bottom: 1px solid #f1f7f3; color: #0f172a; font-size: 14px; }
-                .monetary { font-weight: 900; color: #064e3b; }
-                .negative { color: #ef4444; font-weight: 900; }
-                .footer { padding: 16px 28px; font-size: 13px; color: #475569; }
-                .cta { display:inline-block; padding:10px 14px; background:#10b981;color:#fff;border-radius:8px;text-decoration:none;font-weight:800;margin-top:12px; }
-              </style>
-            </head>
-            <body>
-              <div class="card" role="article" aria-label="Resumen de pago ${member}">
-                <div class="header">
-                  <h1>Resumen de Pago | Orchard TEAM</h1>
-                </div>
-                <div class="content">
-                  <p style="margin:0 0 8px 0;">Hola <strong>${member}</strong>,</p>
-                  <p style="margin:0 0 12px 0;color:#334155;">Adjunto encontrarás el detalle de tu pago.</p>
-
-                  <table role="table" aria-label="Detalle salarial">
-                    <tr><th>Concepto</th><th style="text-align:right">Valor</th></tr>
-                    <tr><td>Horas totales</td><td style="text-align:right">${hrs} hrs</td></tr>
-                    <tr><td>Rate neto (por hora)</td><td style="text-align:right" class="monetary">$${rateNetoFmt}</td></tr>
-                    <tr><td>Total Neto</td><td style="text-align:right" class="monetary">$${totalNetoFmt}</td></tr>
-                    <tr><td>Deducciones (ACC / IRD)</td><td style="text-align:right" class="negative">-$${totalTaxACCFmt}</td></tr>
-                  </table>
-
-                  <div style="margin-top:14px;">
-                    <strong>Detalle adicional</strong>
-                    <p style="margin:6px 0 0 0;color:#475569;">CÁLCULO BRUTO: $23.85 + 8% Holiday Pay ($25.75).<br/>DEDUCCIONES IRD: $3.73 PAYE + $0.43 ACC = $${rateDeduccionesFmt}/hr.</p>
-                  </div>
-
-                  <a href="#" class="cta" onclick="window.location.href='mailto:${EMAILS[member] ? EMAILS[member] : ''}?subject=${encodeURIComponent('Resumen de pago - ' + member)}'">Responder por correo</a>
-                </div>
-                <div class="footer">
-                  Saludos,<br/>Orchard TEAM
-                </div>
-              </div>
-            </body>
-            </html>
-        `;
-    };
-
-    const openEmailPreviewWindow = (member, totalHrs, rateNeto, rateDeducciones, totalNeto, totalTaxACC) => {
-        const recipient = EMAILS[member];
-        if (!recipient) {
-            alert(`No hay correo configurado para ${member}. Por favor configura el email para este miembro.`);
-            return;
-        }
-
-        const subject = `Resumen de pago - ${member}`;
-        const plainBody = buildPlainEmail(member, totalHrs, rateNeto, rateDeducciones, totalNeto, totalTaxACC);
-        const htmlTemplate = buildHtmlTemplate(member, totalHrs, rateNeto, rateDeducciones, totalNeto, totalTaxACC);
-
-        const win = window.open('', '_blank', 'noopener,noreferrer,width=800,height=700');
-        if (!win) {
-            alert('Pop-up bloqueado. Permite ventanas emergentes para usar la vista previa de email.');
-            return;
-        }
-
-        const safeHtml = htmlTemplate;
-        win.document.write(safeHtml);
-
-        const addControls = () => {
-            try {
-                const doc = win.document;
-                const controlsBar = doc.createElement('div');
-                controlsBar.style.padding = '12px 28px';
-                controlsBar.style.display = 'flex';
-                controlsBar.style.gap = '8px';
-                controlsBar.style.alignItems = 'center';
-                controlsBar.style.justifyContent = 'flex-end';
-                controlsBar.style.background = '#f6fbf7';
-
-                const sendBtn = doc.createElement('button');
-                sendBtn.textContent = 'Enviar correo (abrir cliente)';
-                sendBtn.style.padding = '10px 14px';
-                sendBtn.style.background = '#10b981';
-                sendBtn.style.color = '#fff';
-                sendBtn.style.border = 'none';
-                sendBtn.style.borderRadius = '8px';
-                sendBtn.style.fontWeight = '800';
-                sendBtn.style.cursor = 'pointer';
-                sendBtn.onclick = () => {
-                    const mailto = `mailto:${recipient}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(plainBody)}`;
-                    window.location.href = mailto;
-                };
-
-                const copyHtmlBtn = doc.createElement('button');
-                copyHtmlBtn.textContent = 'Copiar plantilla HTML';
-                copyHtmlBtn.style.padding = '10px 14px';
-                copyHtmlBtn.style.background = '#064e3b';
-                copyHtmlBtn.style.color = '#fff';
-                copyHtmlBtn.style.border = 'none';
-                copyHtmlBtn.style.borderRadius = '8px';
-                copyHtmlBtn.style.fontWeight = '700';
-                copyHtmlBtn.style.cursor = 'pointer';
-                copyHtmlBtn.onclick = async () => {
-                    try {
-                        await navigator.clipboard.writeText(htmlTemplate);
-                        copyHtmlBtn.textContent = 'Plantilla copiada ✓';
-                        setTimeout(() => { if (copyHtmlBtn) copyHtmlBtn.textContent = 'Copiar plantilla HTML'; }, 1500);
-                    } catch (e) {
-                        alert('No se pudo copiar al portapapeles. Usa Ctrl+C en la ventana emergente.');
-                    }
-                };
-
-                controlsBar.appendChild(copyHtmlBtn);
-                controlsBar.appendChild(sendBtn);
-
-                const firstChild = win.document.body.firstChild;
-                win.document.body.insertBefore(controlsBar, firstChild);
-            } catch (e) {
-                console.error('Error adding controls to preview window', e);
-            }
-        };
-
-        setTimeout(addControls, 200);
     };
 
     const startCountdownAndEmail = (member, totalHrs, rateNeto, rateDeducciones, totalNeto, totalTaxACC) => {
@@ -482,7 +367,7 @@ function App() {
             ec.style.paddingTop = '20px';
         });
 
-        clone.querySelectorAll('.setall-panel').forEach(p => {
+        clone.querySelectorAll('.cell-picker').forEach(p => {
             p.style.position = 'absolute';
             p.style.zIndex = '1000';
         });
@@ -548,141 +433,14 @@ function App() {
         }
     };
 
-    const EmailIcon = ({ size = 20 }) => (
+    const EmailIconInline = ({ size = 20 }) => (
         <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden>
             <path d="M2 6.5A2.5 2.5 0 0 1 4.5 4h15A2.5 2.5 0 0 1 22 6.5v11A2.5 2.5 0 0 1 19.5 20h-15A2.5 2.5 0 0 1 2 17.5v-11z" stroke="#10b981" strokeWidth="1.4" strokeLinejoin="round" strokeLinecap="round" />
             <path d="M3 6.8l8.2 6.2a2 2 0 0 0 2.6 0L22 6.8" stroke="#10b981" strokeWidth="1.4" strokeLinejoin="round" strokeLinecap="round" />
         </svg>
     );
 
-    // hours quick options for panel
-    const hoursOptions = Array.from({ length: 24 }, (_, i) => ((i + 1) / 2).toString());
-
-    // Map modal with search (Nominatim)
-    const MapPickerModal = ({ dateLabel, initialPos, onClose, onConfirm }) => {
-        const [marker, setMarker] = useState(initialPos || null);
-        const [query, setQuery] = useState('');
-        const [results, setResults] = useState([]);
-        const [isSearching, setIsSearching] = useState(false);
-
-        function ClickHandler() {
-            useMapEvents({
-                click(e) {
-                    setMarker({ lat: e.latlng.lat, lng: e.latlng.lng });
-                }
-            });
-            return null;
-        }
-
-        const searchAddress = async (q) => {
-            if (!q || q.trim() === '') return;
-            setIsSearching(true);
-            try {
-                const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(q)}&limit=6`;
-                const res = await fetch(url);
-                if (!res.ok) throw new Error('Search failed');
-                const json = await res.json();
-                setResults(json || []);
-            } catch (e) {
-                console.error('Search error', e);
-                setResults([]);
-            } finally {
-                setIsSearching(false);
-            }
-        };
-
-        return (
-            <div
-                style={{
-                    position: 'fixed',
-                    inset: 0,
-                    zIndex: 2000,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    background: 'rgba(2,6,23,0.55)',
-                    padding: 20
-                }}
-                onClick={onClose}
-                aria-modal="true"
-                role="dialog"
-            >
-                <div style={{ width: '100%', maxWidth: 980, height: '80vh', borderRadius: 12, overflow: 'hidden', background: '#fff' }}
-                    onClick={(e) => e.stopPropagation()}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', borderBottom: '1px solid #eee' }}>
-                        <div style={{ fontWeight: 900 }}>Buscar / seleccionar ubicación - {dateLabel}</div>
-                        <div style={{ display: 'flex', gap: 8 }}>
-                            <button onClick={onClose} style={{ padding: '8px 10px', borderRadius: 8, background: '#efefef', border: 'none', fontWeight: 700 }}>Cerrar</button>
-                            <button
-                                onClick={() => {
-                                    if (!marker) return alert('Seleccione un punto en el mapa o desde resultados');
-                                    onConfirm(marker.lat, marker.lng);
-                                    onClose();
-                                }}
-                                style={{ padding: '8px 10px', borderRadius: 8, background: '#10b981', color: '#fff', border: 'none', fontWeight: 900 }}
-                            >
-                                Guardar ubicación
-                            </button>
-                        </div>
-                    </div>
-
-                    <div style={{ display: 'flex', height: 'calc(100% - 48px)' }}>
-                        <div style={{ width: 360, borderRight: '1px solid #eee', padding: 12, overflowY: 'auto' }}>
-                            <div style={{ marginBottom: 8 }}>
-                                <input
-                                    placeholder="Buscar dirección, calle, ciudad..."
-                                    value={query}
-                                    onChange={(e) => setQuery(e.target.value)}
-                                    onKeyDown={(e) => { if (e.key === 'Enter') searchAddress(query); }}
-                                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #ddd' }}
-                                />
-                                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                                    <button onClick={() => searchAddress(query)} style={{ padding: '8px 10px', borderRadius: 8, background: '#10b981', color: '#fff', border: 'none', fontWeight: 900 }}>
-                                        {isSearching ? 'Buscando...' : 'Buscar'}
-                                    </button>
-                                    <button onClick={() => { setQuery(''); setResults([]); }} style={{ padding: '8px 10px', borderRadius: 8, background: '#efefef', border: 'none', fontWeight: 800 }}>
-                                        Limpiar
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div>
-                                <div style={{ fontWeight: 900, marginBottom: 8 }}>Resultados</div>
-                                {results.length === 0 && <div style={{ color: '#666', fontSize: 13 }}>Sin resultados</div>}
-                                {results.map((r, i) => (
-                                    <div key={i} onClick={() => {
-                                        setMarker({ lat: parseFloat(r.lat), lng: parseFloat(r.lon) });
-                                    }} style={{ cursor: 'pointer', padding: 8, borderRadius: 8, background: '#fafafa', marginBottom: 8, border: marker && marker.lat === parseFloat(r.lat) && marker.lng === parseFloat(r.lon) ? '2px solid #10b981' : '1px solid #eee' }}>
-                                        <div style={{ fontWeight: 800 }}>{r.display_name.split(',')[0]}</div>
-                                        <div style={{ fontSize: 12, color: '#555' }}>{r.display_name}</div>
-                                    </div>
-                                ))}
-                            </div>
-
-                        </div>
-
-                        <div style={{ flex: 1 }}>
-                            <MapContainer center={ initialPos ? [initialPos.lat, initialPos.lng] : [ -36.8485, 174.7633 ] } zoom={13} style={{ height: '100%', width: '100%' }}>
-                                <TileLayer
-                                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                                />
-                                <ClickHandler />
-                                {marker && (
-                                    <Marker position={[marker.lat, marker.lng]}>
-                                        <Popup>
-                                            {marker.lat.toFixed(5)}, {marker.lng.toFixed(5)}
-                                        </Popup>
-                                    </Marker>
-                                )}
-                            </MapContainer>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        );
-    };
-
+    // === RENDER ===
     return (
         <div className="min-h-screen bg-[#050505] font-sans text-slate-300" style={{ overflowX: 'hidden', width: '100vw', maxWidth: '100%', padding: '0' }}>
             <style>
@@ -868,8 +626,8 @@ function App() {
                     width: 100%;
                     max-width: 100%;
                 }
-                .week-wrapper { 
-                    position: relative; 
+                .week-wrapper {
+                    position: relative;
                     width: 100%;
                     max-width: 100%;
                 }
@@ -884,13 +642,13 @@ function App() {
                     background: linear-gradient(145deg, #064e3b 0%, #022c22 100%);
                     border: 1px solid #10b981;
                 }
-                .week-label span { 
-                    color: #ffffff; 
+                .week-label span {
+                    color: #ffffff;
                     font-size: clamp(9px, 1.5vw, 12px);
-                    font-weight: 900; 
-                    text-transform: uppercase; 
-                    letter-spacing: 0.4em; 
-                    display: inline-block; 
+                    font-weight: 900;
+                    text-transform: uppercase;
+                    letter-spacing: 0.4em;
+                    display: inline-block;
                 }
 
                 .week-card {
@@ -902,17 +660,17 @@ function App() {
                     width: 100%;
                     max-width: 100%;
                 }
-                
+
                 .table-container {
                     width: 100%;
                     overflow-x: auto;
                     overflow-y: visible;
                     -webkit-overflow-scrolling: touch;
                 }
-                
-                .week-table { 
-                    width: 100%; 
-                    border-collapse: separate; 
+
+                .week-table {
+                    width: 100%;
+                    border-collapse: separate;
                     border-spacing: 0 8px;
                     min-width: 100%;
                 }
@@ -945,7 +703,7 @@ function App() {
                 padding: 8px 4px;
                 text-align: center;
             }
-            
+
             .week-table tbody td input {
                 width: clamp(36px, 6.5vw, 52px);
                 min-width: 36px;
@@ -1031,7 +789,7 @@ function App() {
                 width: 100%;
                 max-width: 100%;
             }
-            
+
             .salary-grid {
                 display: grid;
                 grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -1039,7 +797,7 @@ function App() {
                 width: 100%;
                 max-width: 100%;
             }
-            
+
             .salary-card {
                 position: relative;
                 background-color: #0f0f0f;
@@ -1060,16 +818,16 @@ function App() {
                 justify-content: space-between;
                 flex-wrap: wrap;
             }
-            
+
             .card-left, .card-center, .card-right {
                 min-width: 0;
                 flex: 1;
             }
-            
+
             .card-center {
                 text-align: center;
             }
-            
+
             .card-center h3 {
                 font-size: clamp(1rem, 3.5vw, 1.4rem);
                 line-height: 1;
@@ -1078,21 +836,21 @@ function App() {
                 overflow: hidden;
                 text-overflow: ellipsis;
             }
-            
-            .card-left p, .card-left .rate { 
-                font-size: 12px; 
+
+            .card-left p, .card-left .rate {
+                font-size: 12px;
             }
-            
-            .card-left .rate-amount { 
-                font-size: 16px; 
-                font-weight: 800; 
-                color: #fff; 
+
+            .card-left .rate-amount {
+                font-size: 16px;
+                font-weight: 800;
+                color: #fff;
             }
 
             .card-right {
                 text-align: right;
             }
-            
+
             .card-right .totalNeto {
                 font-size: clamp(16px, 4vw, 28px);
                 font-weight: 1000;
@@ -1109,7 +867,7 @@ function App() {
                 padding: 0 36px;
                 overflow: hidden;
             }
-            
+
             .expandable-grid {
                 display: grid;
                 grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -1131,7 +889,7 @@ function App() {
                 .week-card { padding: 28px 8px 16px 8px; border-radius: 20px; }
                 .week-table thead th { padding: 8px 2px; font-size: 8px; }
                 .week-table tbody td { padding: 6px 2px; }
-                .week-table tbody td input { min-width: 32px; max-width: 44px; height: 36px; font-size: 12px; }
+                .week-table tbody td input { min-width: 32px; max-width: 44px; height: 36px; font-size: 12px; border-radius: 8px; }
                 .set-all-select { min-width: 36px; max-width: 50px; height: 34px; font-size: 10px; }
                 .salary-section { padding: 40px 12px; border-radius: 1.5rem; }
                 .salary-grid { grid-template-columns: 1fr; gap: 14px; }
@@ -1179,6 +937,64 @@ function App() {
             }
             .email-send-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(16,185,129,0.06); }
             .email-send-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+            /* VIDEO CROSSFADE LAYERS (added) */
+            .video-layer {
+                position: absolute;
+                inset: 0;
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+                z-index: 0;
+                opacity: 0;
+                transition: opacity 0.9s ease;
+                pointer-events: none;
+            }
+            .video-visible {
+                opacity: 0.32; /* similar to previous hero opacity */
+            }
+
+            .hero-overlay {
+                position: absolute;
+                inset: 0;
+                z-index: 5;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                pointer-events: none;
+            }
+            .hero-logo {
+                width: 124px;
+                height: 124px;
+                border-radius: 20px;
+                object-fit: cover;
+                border: 3px solid rgba(255,255,255,0.06);
+                box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+                background: rgba(255,255,255,0.03);
+            }
+
+            /* per-cell picker small styles (preserve look & spacing) */
+            .cell-input-wrapper { display:flex; align-items:center; gap:6px; justify-content:center; }
+            .cell-input { width:64px; padding:6px; border-radius:8px; border:1px solid rgba(0,0,0,0.06); text-align:center; background-color:#f8fafc; color:#059669; font-weight:800; }
+            .cell-picker-btn { padding:6px 8px; border-radius:8px; border:1px solid rgba(6,95,70,0.06); background:#ffffff; cursor:pointer; }
+
+            .cell-picker {
+                position: absolute;
+                top: calc(100% + 8px);
+                left: 50%;
+                transform: translateX(-50%);
+                width: 320px;
+                max-width: 86vw;
+                background: #ffffff;
+                color: #0f172a;
+                border-radius: 12px;
+                box-shadow: 0 10px 30px rgba(2,6,23,0.2);
+                border: 1px solid rgba(6,95,70,0.06);
+                z-index: 60;
+                padding: 12px;
+            }
+            .cell-option { padding:8px 10px; border-radius:8px; background:#f8fafc; border:1px solid rgba(6,95,70,0.04); cursor:pointer; font-weight:800; display:inline-flex; align-items:center; gap:8px; margin:4px; }
+
                 `}
             </style>
 
@@ -1189,8 +1005,13 @@ function App() {
             </div>
 
             <div className="main-container" style={{ paddingTop: '16px', paddingBottom: '40px' }}>
-                <section className="hero-section">
+                <section className="hero-section" aria-hidden={false}>
                     <div className="hero-blob" />
+
+                    {/* Two video layers for crossfade */}
+                    <video ref={videoARef} className={`video-layer ${activeLayerA ? 'video-visible' : ''}`} muted playsInline />
+                    <video ref={videoBRef} className={`video-layer ${!activeLayerA ? 'video-visible' : ''}`} muted playsInline />
+
                     <div style={{ position: 'relative', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '24px' }}>
                         <div className="hero-badge">
                             <ShieldCheck className="text-black" size={40} strokeWidth={2.5} />
@@ -1211,30 +1032,16 @@ function App() {
                                 Precision Management System
                             </p>
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
-                            <div style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '10px',
-                                padding: '8px 16px',
-                                backgroundColor: 'rgba(255,255,255,0.03)',
-                                borderRadius: '1rem',
-                                border: '1px solid rgba(255,255,255,0.08)',
-                                color: '#ecfdf5'
-                            }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 16px', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: '1rem', border: '1px solid rgba(255,255,255,0.08)', color: '#ecfdf5' }}>
                                 <Calendar size={16} style={{ color: '#10b981' }} />
                                 <span style={{ fontSize: '12px', fontWeight: '900', letterSpacing: '0.1em' }}>
                                     19 ENE / 15 FEB 2026
                                 </span>
                             </div>
+
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <span style={{ position: 'relative', display: 'flex', height: '8px', width: '8px' }}>
-                                    {isOnline && <span style={{ position: 'absolute', height: '100%', width: '100%', borderRadius: '50%', backgroundColor: '#4ade80', opacity: 0.75, animation: 'ping 1s cubic-bezier(0, 0, 0.2, 1) infinite' }} />}
-                                    <span style={{ position: 'relative', display: 'inline-flex', height: '8px', width: '8px', borderRadius: '50%', backgroundColor: isOnline ? '#10b981' : '#f43f5e' }} />
-                                </span>
-                                <span style={{ fontSize: '9px', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '0.2em', color: '#52525b' }}>
-                                    {isOnline ? 'System Harvested' : 'Winter Dormancy'}
-                                </span>
+                                <button onClick={playNextVideoManual} style={{ marginLeft: 8, padding: '8px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.06)', color: '#fff', border: 'none', cursor: 'pointer' }}>Siguiente fondo</button>
                             </div>
                         </div>
                     </div>
@@ -1259,7 +1066,6 @@ function App() {
                                                                 <div style={{ fontSize: 11, fontWeight: 900, color: '#64748b' }}>{day.dayName.substring(0,3).toUpperCase()}</div>
                                                                 <div style={{ fontSize: 13, fontWeight: 900, color: '#064e3b' }}>{day.display}</div>
 
-                                                                {/* LOCATION BUTTON (above dropdown) */}
                                                                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                                                                     <button
                                                                         className="location-btn"
@@ -1278,69 +1084,6 @@ function App() {
                                                                     )}
                                                                 </div>
 
-                                                                {/* SET-ALL custom button + panel (positioned under header) */}
-                                                                <div style={{ marginTop: 6, display: 'flex', justifyContent: 'center' }} onClick={(e) => e.stopPropagation()}>
-                                                                    <button
-                                                                        className="setall-button"
-                                                                        onClick={(e) => {
-                                                                            e.stopPropagation();
-                                                                            setOpenDropdowns(prev => ({ ...prev, [day.display]: !prev[day.display] }));
-                                                                        }}
-                                                                        aria-expanded={!!openDropdowns[day.display]}
-                                                                        aria-haspopup="true"
-                                                                        title="Abrir opciones"
-                                                                    >
-                                                                        +
-                                                                    </button>
-
-                                                                    {openDropdowns[day.display] && (
-                                                                        <div
-                                                                            className="setall-panel"
-                                                                            onClick={(e) => e.stopPropagation()}
-                                                                            role="dialog"
-                                                                            aria-label={`Opciones rápidas para ${day.display}`}
-                                                                        >
-                                                                            <div style={{ fontWeight: 900, color: '#064e3b', marginBottom: 8 }}>Marcadores</div>
-                                                                            <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
-                                                                                <div className="panel-option" onClick={() => handleSetAll(day.display, EMOJI_MARKERS.RAIN)}>
-                                                                                    <span style={{ fontSize: '18px' }}>{EMOJI_MARKERS.RAIN}</span>
-                                                                                    <span style={{ fontSize: '12px' }}>Lluvia</span>
-                                                                                </div>
-                                                                                <div className="panel-option" onClick={() => handleSetAll(day.display, EMOJI_MARKERS.MAN_NO)}>
-                                                                                    <span style={{ fontSize: '18px' }}>{EMOJI_MARKERS.MAN_NO}</span>
-                                                                                    <span style={{ fontSize: '12px' }}>No asis. (H)</span>
-                                                                                </div>
-                                                                                <div className="panel-option" onClick={() => handleSetAll(day.display, EMOJI_MARKERS.WOMAN_NO)}>
-                                                                                    <span style={{ fontSize: '18px' }}>{EMOJI_MARKERS.WOMAN_NO}</span>
-                                                                                    <span style={{ fontSize: '12px' }}>No asis. (M)</span>
-                                                                                </div>
-                                                                            </div>
-
-                                                                            <div style={{ height: '1px', background: 'rgba(6,95,70,0.04)', margin: '8px 0' }} />
-
-                                                                            <div style={{ fontWeight: 900, color: '#064e3b', marginBottom: 8 }}>Horas rápidas</div>
-                                                                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-                                                                                {hoursOptions.slice(0, 12).map(h => (
-                                                                                    <div key={h} className="panel-option" onClick={() => handleSetAll(day.display, h)}>
-                                                                                        <span style={{ fontSize: '12px' }}>{h}h</span>
-                                                                                    </div>
-                                                                                ))}
-                                                                            </div>
-                                                                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-                                                                                {hoursOptions.slice(12).map(h => (
-                                                                                    <div key={h} className="panel-option" onClick={() => handleSetAll(day.display, h)}>
-                                                                                        <span style={{ fontSize: '12px' }}>{h}h</span>
-                                                                                    </div>
-                                                                                ))}
-                                                                            </div>
-
-                                                                            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
-                                                                                <button className="btn-clear" onClick={() => handleSetAll(day.display, "CLEAR")}>Limpiar</button>
-                                                                                <button className="btn-close" onClick={() => setOpenDropdowns(prev => ({ ...prev, [day.display]: false }))}>Cerrar</button>
-                                                                            </div>
-                                                                        </div>
-                                                                    )}
-                                                                </div>
                                                             </div>
                                                         </th>
                                                     ))}
@@ -1363,16 +1106,15 @@ function App() {
                                                 </tr>
                                                 <tr style={{ height: '12px' }}></tr>
                                                 {TEAM_MEMBERS.map((member) => {
-                                                    const nombresFemeninos = ['MARIA', 'ANA', 'LAURA', 'ELENA', 'SARA', 'CARMEN', 'LUCIA', 'CONY', 'GHIS', 'MELANY'];
-                                                    const esFemenino = nombresFemeninos.includes(member.toUpperCase());
                                                     const isBlinking = !!(countdowns[member] && countdowns[member] > 0);
                                                     return (
                                                         <tr key={member} data-member={member}>
                                                             <td className="member-name" style={{ padding: '16px 8px', textAlign: 'center', borderRadius: '16px 0 0 16px' }}>{member}</td>
                                                             {week.map(day => {
                                                                 const cellVal = (hoursData[member] && hoursData[member][day.display]) || "";
+                                                                const cellKey = `${member}__${day.display}`;
                                                                 return (
-                                                                    <td key={day.display} style={{ textAlign: 'center', backgroundColor: '#ffffff', borderBottom: '1px solid #f1f5f9' }}>
+                                                                    <td key={day.display} style={{ textAlign: 'center', backgroundColor: '#ffffff', borderBottom: '1px solid #f1f5f9', position: 'relative' }}>
                                                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                                                             <input
                                                                                 type="text"
@@ -1383,6 +1125,62 @@ function App() {
                                                                                 className={isBlinking ? 'blinking-input' : ''}
                                                                                 style={{ textAlign: 'center', width: 64, padding: '6px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.06)' }}
                                                                             />
+                                                                        </div>
+                                                                        <div style={{ marginTop: 8 }}>
+                                                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                                                <button
+                                                                                    className="cell-picker-btn"
+                                                                                    onClick={(e) => { e.stopPropagation(); setOpenCellPickers(prev => ({ ...prev, [cellKey]: !prev[cellKey] })); }}
+                                                                                    aria-haspopup="true"
+                                                                                    aria-expanded={!!openCellPickers[cellKey]}
+                                                                                    title="Opciones rápidas"
+                                                                                >
+                                                                                    +
+                                                                                </button>
+                                                                            </div>
+
+                                                                            {openCellPickers[cellKey] && (
+                                                                                <div className="cell-picker" onClick={(e) => e.stopPropagation()}>
+                                                                                    <div style={{ fontWeight: 900, color: '#064e3b', marginBottom: 8 }}>Marcadores</div>
+                                                                                    <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+                                                                                        <div className="cell-option" onClick={() => handleCellSet(member, day.display, EMOJI_MARKERS.RAIN)}>
+                                                                                            <span style={{ fontSize: '18px' }}>{EMOJI_MARKERS.RAIN}</span>
+                                                                                            <span style={{ fontSize: '12px' }}>Lluvia</span>
+                                                                                        </div>
+                                                                                        <div className="cell-option" onClick={() => handleCellSet(member, day.display, EMOJI_MARKERS.MAN_NO)}>
+                                                                                            <span style={{ fontSize: '18px' }}>{EMOJI_MARKERS.MAN_NO}</span>
+                                                                                            <span style={{ fontSize: '12px' }}>No asis. (H)</span>
+                                                                                        </div>
+                                                                                        <div className="cell-option" onClick={() => handleCellSet(member, day.display, EMOJI_MARKERS.WOMAN_NO)}>
+                                                                                            <span style={{ fontSize: '18px' }}>{EMOJI_MARKERS.WOMAN_NO}</span>
+                                                                                            <span style={{ fontSize: '12px' }}>No asis. (M)</span>
+                                                                                        </div>
+                                                                                    </div>
+
+                                                                                    <div style={{ height: '1px', background: 'rgba(6,95,70,0.04)', margin: '8px 0' }} />
+
+                                                                                    <div style={{ fontWeight: 900, color: '#064e3b', marginBottom: 8 }}>Horas rápidas</div>
+                                                                                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                                                                                        {hoursOptions.slice(0, 12).map(h => (
+                                                                                            <div key={h} className="cell-option" onClick={() => handleCellSet(member, day.display, h)}>
+                                                                                                <span style={{ fontSize: '12px' }}>{h}h</span>
+                                                                                            </div>
+                                                                                        ))}
+                                                                                    </div>
+                                                                                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                                                                                        {hoursOptions.slice(12).map(h => (
+                                                                                            <div key={h} className="cell-option" onClick={() => handleCellSet(member, day.display, h)}>
+                                                                                                <span style={{ fontSize: '12px' }}>{h}h</span>
+                                                                                            </div>
+                                                                                        ))}
+                                                                                    </div>
+
+                                                                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
+                                                                                        <button className="btn-clear" onClick={() => handleCellSet(member, day.display, "CLEAR")}>Limpiar</button>
+                                                                                        <button className="btn-close" onClick={() => setOpenCellPickers(prev => ({ ...prev, [cellKey]: false }))}>Cerrar</button>
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
                                                                         </div>
                                                                     </td>
                                                                 );
@@ -1417,8 +1215,8 @@ function App() {
                         }}>
                             {TEAM_MEMBERS.map(member => {
                                 const totalHrs = parseFloat(calculateGrandTotal(member));
-                                const rateNeto = 21.59;
-                                const rateDeducciones = 4.16;
+                                const rateNeto = RATE_NETO;
+                                const rateDeducciones = RATE_DEDUCCIONES;
                                 const totalNeto = (totalHrs * rateNeto).toFixed(2);
                                 const totalTaxACC = (totalHrs * rateDeducciones).toFixed(2);
                                 const isBlinking = !!(countdowns[member] && countdowns[member] > 0);
@@ -1465,8 +1263,8 @@ function App() {
                                         <div className="card-inner" style={{ padding: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                             <div className="card-left">
                                                 <p style={{ color: '#52525b', fontSize: '9px', fontWeight: '900', letterSpacing: '0.1em', margin: 0 }}>RATE</p>
-                                                <div style={{ color: '#fff', fontSize: '14px', fontWeight: '800' }}>$25.75</div>
-                                                <div style={{ color: '#00ffcc', fontSize: '13px', fontWeight: '900' }}>$21.59 <span style={{ fontSize: '9px' }}>NET</span></div>
+                                                <div style={{ color: '#fff', fontSize: '14px', fontWeight: '800' }}>${RATE_BRUTO_DISPLAY}</div>
+                                                <div style={{ color: '#00ffcc', fontSize: '13px', fontWeight: '900' }}>${RATE_NETO} <span style={{ fontSize: '9px' }}>NET</span></div>
                                             </div>
 
                                             <div className="card-center" style={{ textAlign: 'center', flex: 1, padding: '0 10px' }}>
@@ -1497,7 +1295,7 @@ function App() {
                                                             title={recipient ? (isBlinking ? `Enviando... ${secondsLeft}s` : `Enviar resumen por email a ${recipient}`) : 'Email no configurado'}
                                                         >
                                                             <span style={{ display: 'inline-flex', alignItems: 'center' }}>
-                                                                <EmailIcon size={18} />
+                                                                <EmailIconInline size={18} />
                                                             </span>
                                                             <span className={isBlinking ? 'twinkle' : ''} style={{ color: '#a7f3d0', fontSize: '12px' }}>
                                                                 {isBlinking ? `Enviando... ${secondsLeft}s` : 'Cuanto cobro'}
